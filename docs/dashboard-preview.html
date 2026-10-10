@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoMicSwitch · 控制台预览</title>
+<style>
+:root{
+  --bg:#070B12; --panel:rgba(17,25,39,.72); --panel2:rgba(13,20,32,.85);
+  --line:rgba(56,189,248,.14); --line2:rgba(56,189,248,.28);
+  --txt:#E6EDF7; --muted:#8CA0B8; --dim:#5A6E86;
+  --accent:#38BDF8; --accent2:#22D3EE; --indigo:#6366F1;
+  --ok:#34D399; --warn:#FBBF24; --err:#F87171;
+  --mono:"JetBrains Mono","Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace;
+  --r:16px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--txt);overflow-x:hidden;
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+/* ---------- 背景 ---------- */
+.bg-grid{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:linear-gradient(rgba(56,189,248,.055) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(56,189,248,.055) 1px,transparent 1px);
+  background-size:46px 46px;
+  mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 20%,transparent 78%);
+  -webkit-mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 20%,transparent 78%);
+}
+.glow{position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none;opacity:.5}
+.g1{width:560px;height:560px;top:-260px;left:-140px;background:radial-gradient(circle,rgba(56,189,248,.55),transparent 68%)}
+.g2{width:520px;height:520px;top:-200px;right:-160px;background:radial-gradient(circle,rgba(99,102,241,.5),transparent 68%)}
+
+.wrap{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:26px 24px 108px}
+
+/* ---------- 顶栏 ---------- */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:22px}
+.brand{display:flex;align-items:center;gap:14px}
+.logo{
+  width:46px;height:46px;border-radius:13px;display:grid;place-items:center;flex:0 0 auto;
+  background:linear-gradient(135deg,#38BDF8,#6366F1);
+  box-shadow:0 8px 26px rgba(56,189,248,.35),inset 0 1px 0 rgba(255,255,255,.35);
+}
+h1{margin:0;font-size:20px;font-weight:650;letter-spacing:.2px;display:flex;align-items:baseline;gap:9px}
+.ver{font:11px/1 var(--mono);color:var(--accent);border:1px solid var(--line2);border-radius:20px;padding:4px 9px;background:rgba(56,189,248,.07)}
+.sub{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.topright{display:flex;align-items:center;gap:18px}
+.pill{display:flex;align-items:center;gap:8px;padding:8px 15px;border-radius:22px;font-weight:600;font-size:13px;
+  border:1px solid var(--line2);background:rgba(52,211,153,.09);color:#A7F3D0;transition:.3s}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);animation:blink 1.8s infinite}
+.pill.warn{background:rgba(251,191,36,.1);color:#FDE68A;border-color:rgba(251,191,36,.3)}
+.pill.warn i{background:var(--warn);box-shadow:0 0 10px var(--warn)}
+.pill.err{background:rgba(248,113,113,.1);color:#FCA5A5;border-color:rgba(248,113,113,.3)}
+.pill.err i{background:var(--err);box-shadow:0 0 10px var(--err);animation:none}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.meta{display:flex;gap:22px;text-align:right}
+.meta label{display:block;font-size:11px;color:var(--dim);letter-spacing:.4px}
+.meta b{font:600 14px/1.5 var(--mono);color:var(--txt)}
+
+/* ---------- 卡片 ---------- */
+.card{
+  position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 10px 34px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.045);
+}
+.card::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;border-radius:var(--r) var(--r) 0 0;
+  background:linear-gradient(90deg,transparent,rgba(56,189,248,.55),transparent)}
+.card h2{margin:0 0 14px;font-size:13px;font-weight:600;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:10px}
+.hint{font:11px/1 var(--mono);color:var(--dim);text-transform:none;letter-spacing:0;border-left:1px solid var(--line2);padding-left:10px}
+
+/* ---------- 信号流 ---------- */
+.flow{display:flex;align-items:center;gap:0;padding:26px 24px;margin-bottom:16px}
+.node{
+  flex:0 0 244px;padding:16px 18px;border-radius:14px;border:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(23,33,50,.9),rgba(14,21,33,.9));transition:.35s;position:relative;overflow:hidden;
+}
+.node::after{content:"";position:absolute;inset:0;border-radius:14px;opacity:0;transition:.4s;
+  box-shadow:0 0 0 1px var(--accent),0 0 26px rgba(56,189,248,.35) inset}
+.node.flash::after{opacity:1}
+.node-head{display:flex;align-items:center;gap:8px;font-size:11.5px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase}
+.node-head .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 9px var(--accent)}
+.node.capture .node-head .dot{background:var(--ok);box-shadow:0 0 9px var(--ok)}
+.node-name{margin:9px 0 7px;font-size:16px;font-weight:600;line-height:1.35;word-break:break-word;min-height:44px}
+.node-vid{font:12px/1 var(--mono);color:var(--accent);background:rgba(56,189,248,.09);
+  border:1px solid var(--line2);border-radius:7px;padding:5px 9px;display:inline-block}
+.node.capture .node-vid{color:var(--ok);background:rgba(52,211,153,.09);border-color:rgba(52,211,153,.28)}
+
+.link{position:relative;flex:1;min-width:34px;height:2px;margin:0 4px;
+  background:linear-gradient(90deg,rgba(56,189,248,.12),rgba(56,189,248,.6),rgba(56,189,248,.12))}
+.link::after{content:"";position:absolute;top:-3.5px;left:0;width:9px;height:9px;border-radius:50%;
+  background:var(--accent2);box-shadow:0 0 14px 2px var(--accent2);animation:flow 2.4s linear infinite}
+.link.rev::after{animation-direction:reverse}
+@keyframes flow{0%{left:-4%;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:100%;opacity:0}}
+
+.engine{flex:0 0 214px;position:relative;display:grid;place-items:center;padding:6px}
+.ring{position:absolute;width:132px;height:132px;border-radius:50%;border:1px solid rgba(56,189,248,.35);animation:pulse 3s ease-out infinite}
+.ring.r2{animation-delay:1.5s}
+@keyframes pulse{0%{transform:scale(.72);opacity:.85}100%{transform:scale(1.42);opacity:0}}
+.core{position:relative;width:158px;height:158px;border-radius:50%;display:grid;place-content:center;text-align:center;gap:6px;
+  background:radial-gradient(circle at 50% 30%,rgba(56,189,248,.2),rgba(10,16,26,.96) 70%);
+  border:1px solid var(--line2);box-shadow:0 0 42px rgba(56,189,248,.22),inset 0 0 30px rgba(56,189,248,.09)}
+.engine-title{font-size:13px;font-weight:650;background:linear-gradient(90deg,#38BDF8,#22D3EE,#818CF8);
+  -webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:.5px}
+.engine-sub{font:10.5px/1.4 var(--mono);color:var(--muted);max-width:132px;word-break:break-word}
+.badge{font:10px/1 var(--mono);color:#FDE68A;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.1);
+  border-radius:20px;padding:3px 8px;justify-self:center;display:none}
+.badge.on{display:inline-block}
+.core.flash{animation:coreFlash .9s ease-out}
+@keyframes coreFlash{0%{box-shadow:0 0 0 0 rgba(34,211,238,.65),0 0 42px rgba(56,189,248,.22)}
+  100%{box-shadow:0 0 0 34px rgba(34,211,238,0),0 0 42px rgba(56,189,248,.22)}}
+
+/* ---------- 指标 ---------- */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
+.stat{padding:16px 18px}
+.stat label{display:block;font-size:11.5px;color:var(--dim);letter-spacing:.5px;margin-bottom:7px}
+.stat b{font:600 24px/1 var(--mono);color:var(--txt)}
+.stat b.sm{font-size:15px;color:var(--accent)}
+
+/* ---------- 两列 ---------- */
+.cols{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-bottom:16px}
+.cols>section{padding:20px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;font-size:11px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;padding:0 10px 9px}
+td{padding:11px 10px;border-top:1px solid rgba(56,189,248,.1)}
+tr:hover td{background:rgba(56,189,248,.045)}
+td.mono,code{font-family:var(--mono);font-size:12.5px;color:var(--accent)}
+.arrow{color:var(--dim);padding:0 6px}
+.note{color:var(--muted);font-size:12.5px}
+.fbrow{margin-top:14px;padding:12px 14px;border-radius:11px;border:1px dashed rgba(251,191,36,.32);
+  background:rgba(251,191,36,.055);font-size:12.5px;color:#FDE68A;display:flex;align-items:center;gap:10px}
+.fbrow code{color:#FCD34D}
+
+.dev-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.dev-cols h3{margin:0 0 10px;font-size:11.5px;color:var(--dim);letter-spacing:.5px;font-weight:500;text-transform:uppercase}
+ul.dev{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.dev li{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.022);
+  border:1px solid rgba(56,189,248,.08);font-size:12.5px;transition:.25s}
+ul.dev li.on{background:rgba(56,189,248,.1);border-color:var(--line2)}
+ul.dev li .b{width:6px;height:6px;border-radius:50%;background:#31465e;flex:0 0 auto}
+ul.dev li.on .b{background:var(--accent);box-shadow:0 0 9px var(--accent)}
+ul.dev li .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ul.dev li .vd{font:11px/1 var(--mono);color:var(--dim)}
+ul.dev li.on .vd{color:var(--accent)}
+
+/* ---------- 日志 ---------- */
+.logs{padding:20px;margin-bottom:16px}
+.logs-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.logs-head h2{margin:0}
+.logbox{height:250px;overflow:auto;border-radius:12px;background:rgba(6,10,17,.72);border:1px solid rgba(56,189,248,.1);
+  padding:12px 14px;font:12.5px/1.75 var(--mono)}
+.logbox::-webkit-scrollbar{width:9px}
+.logbox::-webkit-scrollbar-thumb{background:rgba(56,189,248,.22);border-radius:9px}
+.logbox::-webkit-scrollbar-track{background:transparent}
+.lg{display:flex;gap:12px;white-space:pre-wrap;word-break:break-word}
+.lg .t{color:var(--dim);flex:0 0 auto}
+.lg .x{flex:1}
+.lg.info .x{color:#B9C7D9}
+.lg.ok .x{color:#6EE7B7}
+.lg.warn .x{color:#FCD34D}
+.lg.err .x{color:#FCA5A5}
+.chk{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+input[type=checkbox]{appearance:none;-webkit-appearance:none;width:36px;height:20px;border-radius:20px;
+  background:rgba(255,255,255,.12);position:relative;cursor:pointer;transition:.25s;outline:none;border:1px solid var(--line)}
+input[type=checkbox]::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+  background:#93A6BC;transition:.25s}
+input[type=checkbox]:checked{background:linear-gradient(90deg,#0EA5E9,#6366F1);border-color:transparent}
+input[type=checkbox]:checked::after{left:18px;background:#fff}
+
+/* ---------- 底部操作栏 ---------- */
+.actionbar{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:13px 24px;background:linear-gradient(180deg,rgba(7,11,18,.6),rgba(7,11,18,.96));
+  border-top:1px solid var(--line);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.btn{border:1px solid var(--line2);background:rgba(56,189,248,.08);color:var(--txt);font:600 13px/1 inherit;
+  padding:11px 20px;border-radius:11px;cursor:pointer;transition:.22s}
+.btn:hover{background:rgba(56,189,248,.16);transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn.primary{background:linear-gradient(135deg,#38BDF8,#6366F1);border-color:transparent;color:#06121f;
+  box-shadow:0 8px 22px rgba(56,189,248,.3)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
+.spacer{flex:1}
+.path{font:11px/1 var(--mono);color:var(--dim);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+@media(max-width:900px){
+  .cols{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .flow{flex-direction:column;gap:16px}
+  .node{flex:1 1 auto;width:100%}
+  .link{width:2px;height:40px;min-width:2px;background:linear-gradient(180deg,rgba(56,189,248,.12),rgba(56,189,248,.6),rgba(56,189,248,.12))}
+  .link::after{animation:flowV 2.4s linear infinite}
+  @keyframes flowV{0%{top:-4%;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:100%;opacity:0}}
+  .dev-cols{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="glow g1"></div><div class="glow g2"></div>
+
+<div class="wrap">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#06121f" stroke-width="2" stroke-linecap="round">
+          <rect x="9" y="2" width="6" height="11" rx="3" fill="#06121f" stroke="none"/>
+          <path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M8.5 21h7"/>
+        </svg>
+      </div>
+      <div>
+        <h1>AutoMicSwitch <span class="ver" id="ver">v2.0.0</span></h1>
+        <p class="sub">默认播放设备变化 &rarr; 自动联动默认麦克风 &middot; by 沐辉</p>
+      </div>
+    </div>
+    <div class="topright">
+      <div class="pill" id="statePill"><i></i><span id="stateText">连接中…</span></div>
+      <div class="meta">
+        <div><label>运行时长</label><b id="uptime">--:--</b></div>
+        <div><label>控制台端口</label><b id="port">----</b></div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="card flow">
+      <div class="node render" id="nodeRender">
+        <div class="node-head"><span class="dot"></span>播放输出</div>
+        <div class="node-name" id="pbName">--</div>
+        <div class="node-vid" id="pbVid">--</div>
+      </div>
+      <div class="link" id="linkA"></div>
+      <div class="engine">
+        <div class="ring"></div><div class="ring r2"></div>
+        <div class="core" id="core">
+          <div class="engine-title">联动引擎</div>
+          <div class="engine-sub" id="matchText">等待首次切换…</div>
+          <div class="badge" id="fbBadge">兜底规则</div>
+        </div>
+      </div>
+      <div class="link rev" id="linkB"></div>
+      <div class="node capture" id="nodeMic">
+        <div class="node-head"><span class="dot"></span>默认麦克风</div>
+        <div class="node-name" id="micName">--</div>
+        <div class="node-vid" id="micVid">--</div>
+      </div>
+    </section>
+
+    <section class="stats">
+      <div class="card stat"><label>联动切换次数</label><b id="switches">0</b></div>
+      <div class="card stat"><label>被改回重试</label><b id="retries">0</b></div>
+      <div class="card stat"><label>规则条数</label><b id="ruleCount">0</b></div>
+      <div class="card stat"><label>兜底麦克风</label><b class="sm" id="fallbackKey">--</b></div>
+    </section>
+
+    <div class="cols">
+      <section class="card rules">
+        <h2>联动规则 <span class="hint">播放设备 &rarr; 目标麦克风</span></h2>
+        <table>
+          <thead><tr><th>播放设备 VID</th><th></th><th>目标麦克风 VID</th><th>说明</th></tr></thead>
+          <tbody id="ruleBody"></tbody>
+        </table>
+        <div class="fbrow">兜底规则：未匹配任何规则时，麦克风统一切到 <code id="fbKey">--</code></div>
+      </section>
+
+      <section class="card devices">
+        <h2>设备清单 <span class="hint">实时</span></h2>
+        <div class="dev-cols">
+          <div><h3>播放设备</h3><ul class="dev" id="pbList"></ul></div>
+          <div><h3>录音设备</h3><ul class="dev" id="capList"></ul></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card logs">
+      <div class="logs-head">
+        <h2>实时日志 <span class="hint">最近 80 条</span></h2>
+        <label class="chk"><input type="checkbox" id="autoScroll" checked> 自动滚动</label>
+      </div>
+      <div class="logbox" id="logbox"><div class="lg info"><span class="t">--:--:--</span><span class="x">正在连接控制台…</span></div></div>
+    </section>
+  </main>
+</div>
+
+<footer class="actionbar">
+  <button class="btn primary" id="btnToggle">暂停联动</button>
+  <button class="btn" id="btnSync">立即同步</button>
+  <label class="chk"><input type="checkbox" id="autoStart"> 开机自启</label>
+  <span class="spacer"></span>
+  <span class="path" id="exePath"></span>
+  <button class="btn ghost" id="btnLog">打开日志</button>
+</footer>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var lastTick = -1, lastLogKey = '', booted = false, guard = false, connected = true;
+
+  function fmtUptime(s){
+    s = Math.max(0, parseInt(s,10) || 0);
+    var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), x = s%60;
+    var p = function(n){ return (n<10?'0':'')+n; };
+    return (h>0 ? h+':' : '') + p(m) + ':' + p(x);
+  }
+  function esc(t){
+    return String(t==null?'':t).replace(/[&<>"]/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    });
+  }
+  function flash(el){
+    if(!el) return;
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+    setTimeout(function(){ el.classList.remove('flash'); }, 900);
+  }
+
+  function render(d){
+    connected = true;
+    $('ver').textContent = 'v' + d.version;
+    $('port').textContent = d.port;
+    $('uptime').textContent = fmtUptime(d.uptime);
+
+    var pill = $('statePill');
+    pill.className = 'pill' + (d.paused ? ' warn' : '');
+    $('stateText').textContent = d.paused ? '已暂停' : '运行中';
+
+    $('pbName').textContent = d.playback.name || '--';
+    $('pbVid').textContent = d.playback.vid || '--';
+    $('micName').textContent = d.mic.name || '--';
+    $('micVid').textContent = d.mic.vid || '--';
+
+    $('matchText').textContent = d.matchedText || '--';
+    $('fbBadge').className = 'badge' + (d.isFallback ? ' on' : '');
+
+    $('switches').textContent = d.switches;
+    $('retries').textContent = d.retries;
+    $('ruleCount').textContent = (d.rules||[]).length;
+    $('fallbackKey').textContent = d.fallback || '未设置';
+    $('fbKey').textContent = d.fallback || '未设置（保持不变）';
+    $('exePath').textContent = d.exePath || '';
+    $('btnToggle').textContent = d.paused ? '恢复联动' : '暂停联动';
+
+    guard = true;
+    $('autoStart').checked = !!d.autostart;
+    guard = false;
+
+    var rb = '';
+    (d.rules||[]).forEach(function(r){
+      rb += '<tr><td class="mono">'+esc(r.playback)+'</td><td class="arrow">&rarr;</td>'
+          + '<td class="mono">'+esc(r.mic)+'</td><td class="note">'+esc(r.note)+'</td></tr>';
+    });
+    if(!rb) rb = '<tr><td colspan="4" class="note">未配置规则</td></tr>';
+    $('ruleBody').innerHTML = rb;
+
+    $('pbList').innerHTML = devList(d.devicesPlayback);
+    $('capList').innerHTML = devList(d.devicesCapture);
+
+    // 日志
+    var logs = d.log || [];
+    var key = logs.length + '|' + (logs.length ? logs[logs.length-1].t + logs[logs.length-1].text : '');
+    if(key !== lastLogKey){
+      lastLogKey = key;
+      var box = $('logbox');
+      var html = '';
+      logs.forEach(function(l){
+        html += '<div class="lg '+esc(l.level)+'"><span class="t">'+esc(l.t)+'</span><span class="x">'+esc(l.text)+'</span></div>';
+      });
+      box.innerHTML = html;
+      if($('autoScroll').checked) box.scrollTop = box.scrollHeight;
+    }
+
+    // 新事件 → 闪烁
+    var ev = d.lastEvent || {};
+    if(booted && ev.tick !== lastTick){
+      flash($('nodeMic')); flash($('nodeRender'));
+      var c = $('core'); c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash');
+      setTimeout(function(){ c.classList.remove('flash'); }, 900);
+    }
+    lastTick = ev.tick;
+    booted = true;
+  }
+
+  function devList(arr){
+    arr = arr || [];
+    if(!arr.length) return '<li><span class="b"></span><span class="nm">无设备</span></li>';
+    return arr.map(function(x){
+      return '<li class="'+(x.default?'on':'')+'"><span class="b"></span>'
+           + '<span class="nm">'+esc(x.name)+'</span><span class="vd">'+esc(x.vid)+'</span></li>';
+    }).join('');
+  }
+
+  function setConn(ok){
+    if(connected === ok) return;
+    connected = ok;
+    var pill = $('statePill');
+    if(!ok){
+      pill.className = 'pill err';
+      $('stateText').textContent = '连接中断';
+    }
+  }
+
+  function tick(){
+    fetch('/api/status', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){ if(d && d.ok) render(d); else setConn(false); })
+      .catch(function(){ setConn(false); });
+  }
+
+  function act(action, value){
+    fetch('/api/action', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:action, value:value})
+    }).then(function(r){ return r.json(); }).then(function(d){ if(d && d.ok) render(d); tick(); })
+      .catch(function(){});
+  }
+
+  $('btnToggle').onclick = function(){ act('toggle'); };
+  $('btnSync').onclick = function(){ act('apply'); };
+  $('btnLog').onclick = function(){ act('openlog'); };
+  $('autoStart').onchange = function(){
+    if(guard) return;
+    act('autostart', this.checked);
+  };
+
+  var MOCK = {"ok": true, "version": "2.0.0", "port": 17817, "paused": false, "uptime": 8412, "autostart": true, "exePath": "C:\\AutoMicSwitch\\dist\\AutoMicSwitch.exe", "playback": {"name": "扬声器 (USB Headset)", "vid": "VID_1234"}, "mic": {"name": "麦克风 (USB Headset)", "vid": "VID_1234", "matched": true}, "matchedText": "VID_1234  →  VID_1234", "isFallback": false, "fallback": "VID_9ABC", "switches": 128, "retries": 1, "lastEvent": {"text": "默认麦克风已切换", "level": "ok", "tick": 512}, "rules": [{"playback": "VID_1234", "mic": "VID_1234", "note": "USB 耳机"}, {"playback": "VID_5678", "mic": "VID_5678", "note": "第二副耳机"}], "devicesPlayback": [{"name": "扬声器 (USB Headset)", "vid": "VID_1234", "default": true}, {"name": "扬声器 (Realtek(R) Audio)", "vid": "VID_8086", "default": false}, {"name": "数字音频 (HDMI)", "vid": "VID_10DE", "default": false}], "devicesCapture": [{"name": "麦克风 (USB Headset)", "vid": "VID_1234", "default": true}, {"name": "麦克风 (USB Camera)", "vid": "VID_9ABC", "default": false}, {"name": "麦克风 (Realtek(R) Audio)", "vid": "VID_8086", "default": false}], "log": [{"t": "20:41:02", "level": "info", "text": "默认播放 → 扬声器 (Realtek(R) Audio)  [VID_8086]"}, {"t": "20:41:02", "level": "ok", "text": "   默认麦克风 → 麦克风 (USB Camera)  [VID_9ABC]  (hr=0,0,0)"}, {"t": "20:41:04", "level": "ok", "text": "   +2s 读回一致，保持成功"}, {"t": "20:41:06", "level": "ok", "text": "   +4s 读回一致，保持成功"}, {"t": "20:41:08", "level": "ok", "text": "   +6s 读回一致，保持成功"}, {"t": "20:52:17", "level": "info", "text": "默认播放 → 扬声器 (USB Headset)  [VID_1234]"}, {"t": "20:52:17", "level": "ok", "text": "   默认麦克风 → 麦克风 (USB Headset)  [VID_1234]  (hr=0,0,0)"}, {"t": "20:52:19", "level": "warn", "text": "   +2s 被改回，重试"}, {"t": "20:52:21", "level": "ok", "text": "   +4s 读回一致，保持成功"}, {"t": "20:52:23", "level": "ok", "text": "   +6s 读回一致，保持成功"}, {"t": "21:03:45", "level": "info", "text": "默认播放 → 数字音频 (HDMI)  [VID_10DE]"}, {"t": "21:03:45", "level": "ok", "text": "   默认麦克风 → 麦克风 (USB Camera)  [VID_9ABC]  (hr=0,0,0)"}, {"t": "21:03:47", "level": "ok", "text": "   +2s 读回一致，保持成功"}, {"t": "21:03:49", "level": "ok", "text": "   +4s 读回一致，保持成功"}]};
+  render(MOCK);
+  var _up = MOCK.uptime;
+  setInterval(function(){ _up++; MOCK.uptime = _up; render(MOCK); }, 1000);
+
+})();
+</script>
+<div style="position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:9;font:12px/1 ui-monospace,monospace;color:#FDE68A;background:rgba(251,191,36,.1);border:1px dashed rgba(251,191,36,.42);border-radius:20px;padding:8px 16px;white-space:nowrap">静态预览 · 数据为示例值，真实运行时由本地程序实时提供</div>
+</body>
+</html>

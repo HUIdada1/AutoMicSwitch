@@ -1,0 +1,9 @@
+# 统一换行符，避免 Windows 批处理在不同机器上出问题
+* text=auto
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+*.png binary
+*.ico binary
+*.exe binary
