@@ -195,15 +195,6 @@ namespace AutoMicSwitch
                 Log("err", "MMDevice 初始化失败: " + e.Message);
                 return;
             }
-            try
-            {
-                setDefaultEndpoint = CreatePolicyConfig();
-            }
-            catch (Exception e)
-            {
-                Log("err", "PolicyConfig 初始化失败: " + e.Message);
-                return;
-            }
 
             thread = new Thread(Loop);
             thread.IsBackground = true;
@@ -234,27 +225,82 @@ namespace AutoMicSwitch
 
         public bool IsPaused { get { return pausedFlag; } }
 
-        // 立即按当前默认播放设备重新应用一次规则
-        public void ApplyNow()
+        // 手动把某个设备设为默认（控制台里点设备列表走的就是这里）。
+        // 改播放设备的话，下一轮轮询会发现变化，照旧按规则把麦克风也切过去。
+        public void SetDefaultDevice(Flow flow, string deviceId)
         {
+            if (string.IsNullOrEmpty(deviceId))
+            {
+                Log("warn", "手动切换失败：没拿到设备");
+                return;
+            }
+
             ThreadPool.QueueUserWorkItem(delegate
             {
                 try
                 {
-                    IMMDevice dev;
-                    int hr = enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender, ERole.eMultimedia, out dev);
-                    if (hr != 0) { Log("warn", "当前无可用播放设备"); return; }
-                    string pinst = GetProp(dev, FMT_INSTANCEID, 2);
-                    Log("info", "手动同步：" + GetProp(dev, FMT_FRIENDLY, 14));
-                    Apply(pinst);
+                    if (setDefaultEndpoint == null)
+                    {
+                        Log("warn", "联动组件尚未就绪，稍后再试");
+                        return;
+                    }
+
+                    DeviceInfo target = null;
+                    foreach (DeviceInfo d in Enumerate(flow))
+                    {
+                        if (d.Id == deviceId) { target = d; break; }
+                    }
+                    if (target == null)
+                    {
+                        Log("warn", "手动切换失败：该设备当前不在线");
+                        return;
+                    }
+
+                    lock (setLock)
+                    {
+                        int a = setDefaultEndpoint(target.Id, ERole.eConsole);
+                        int b = setDefaultEndpoint(target.Id, ERole.eMultimedia);
+                        int c = setDefaultEndpoint(target.Id, ERole.eCommunications);
+                        Log("ok", "手动切换默认" + (flow == Flow.Render ? "播放" : "录音") + " → "
+                            + target.Name + "  [" + target.Vid + "]  (hr=" + a + "," + b + "," + c + ")");
+                    }
+
+                    lock (stateLock)
+                    {
+                        if (flow == Flow.Render)
+                        {
+                            State.PlaybackName = target.Name;
+                            State.PlaybackInstanceId = target.InstanceId;
+                            State.PlaybackVid = target.Vid;
+                        }
+                        else
+                        {
+                            State.MicName = target.Name;
+                            State.MicInstanceId = target.InstanceId;
+                            State.MicVid = target.Vid;
+                        }
+                    }
                 }
-                catch (Exception e) { Log("err", "手动同步失败: " + e.Message); }
+                catch (Exception e) { Log("err", "手动切换失败: " + e.Message); }
             });
         }
 
         // ---------- 主循环 ----------
         void Loop()
         {
+            // PolicyConfig 得建在真正调它的线程上。主线程是 STA、轮询线程是 MTA，
+            // CPolicyConfigClient 不做跨套间编组，主线程建好再拿到这里调会报 E_NOINTERFACE。
+            // 轮询线程和 ThreadPool 线程都是 MTA，属于同一个套间，建一次就够用。
+            try
+            {
+                setDefaultEndpoint = CreatePolicyConfig();
+            }
+            catch (Exception e)
+            {
+                Log("err", "PolicyConfig 初始化失败: " + e.Message);
+                return;
+            }
+
             while (!stopped)
             {
                 if (!pausedFlag)
@@ -305,6 +351,12 @@ namespace AutoMicSwitch
 
         void Apply(string playbackInstance)
         {
+            if (setDefaultEndpoint == null)
+            {
+                Log("warn", "   联动组件尚未就绪，本次跳过");
+                return;
+            }
+
             string micKey = null;
             string ruleText = null;
             bool isFallback = false;
@@ -407,6 +459,7 @@ namespace AutoMicSwitch
         // ---------- 设备枚举 ----------
         public DeviceInfo GetDefault(Flow flow, Role role)
         {
+            if (enumerator == null) return null;
             try
             {
                 IMMDevice dev;
@@ -420,6 +473,7 @@ namespace AutoMicSwitch
         public List<DeviceInfo> Enumerate(Flow flow)
         {
             List<DeviceInfo> list = new List<DeviceInfo>();
+            if (enumerator == null) return list;
             try
             {
                 IMMDeviceCollection col;

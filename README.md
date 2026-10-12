@@ -1,8 +1,42 @@
 # AutoMicSwitch
 
-切换 Windows 默认播放设备（耳机 / 音箱）时，自动把默认麦克风切到对应设备。附带一个本地网页控制台。
+> 切换 Windows 默认播放设备（耳机 / 音箱）时，自动把默认麦克风切到对应设备。附带一个本地网页控制台。
+
+**AutoMicSwitch** watches your Windows default playback device and automatically switches the default microphone to the matching one — so when you put on your headset, the headset mic becomes default; when you switch to speakers, the camera mic takes over. Ships with a local web dashboard. No third-party dependencies.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D6.svg)](#运行环境)
+[![Runtime](https://img.shields.io/badge/.NET%20Framework-4.x-512BD4.svg)](#运行环境)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#运行环境)
+[![Version](https://img.shields.io/badge/version-2.2.0-orange.svg)](#)
 
 作者：沐辉 ｜ MIT License ｜ .NET Framework 4.x，无第三方依赖
+
+---
+
+## 目录
+
+- [解决的问题](#解决的问题)
+- [界面](#界面)
+- [功能](#功能)
+- [运行环境](#运行环境)
+- [安装](#安装)
+- [配置 rules.txt](#配置-rulestxt)
+- [控制台](#控制台)
+- [托盘菜单](#托盘菜单)
+- [开机自启](#开机自启)
+- [自动更新](#自动更新)
+- [从源码编译](#从源码编译)
+- [发版](#发版)
+- [目录结构](#目录结构)
+- [日志](#日志)
+- [工作原理](#工作原理)
+- [常见问题](#常见问题)
+- [卸载](#卸载)
+- [路线图](#路线图)
+- [贡献](#贡献)
+- [致谢](#致谢)
+- [License](#license)
 
 ## 解决的问题
 
@@ -18,8 +52,10 @@
 
 - 默认播放设备变化 → 自动切换默认麦克风
 - 本地网页控制台：信号流向、当前设备、规则表、设备清单、实时日志
-- 托盘常驻，可暂停 / 恢复、立即同步、打开日志
-- 开机自启，界面开关或脚本都行
+- 控制台里点一下设备就能切默认播放 / 录音设备，不用再翻系统声音设置
+- 托盘常驻，可暂停 / 恢复、打开日志
+- 安装时可选开机自启，装完也能在控制台里随时开关
+- 内置更新：查到新版本后下载、校验、静默替换并自动重启
 - 规则写在 `rules.txt`，改完重启程序即可，不用重新编译
 
 ## 运行环境
@@ -28,17 +64,30 @@
 - .NET Framework 4.x，系统自带，不用另外装
 - 不需要管理员权限
 
-## 安装与首次运行
+## 安装
 
-1. 双击 `build.cmd` 编译，产出 `dist\AutoMicSwitch.exe`
-2. 编辑 `dist\rules.txt`，填上你自己的设备（见下一节）
-3. 双击 `dist\AutoMicSwitch.exe`，浏览器会打开控制台 http://127.0.0.1:17817/
+下载 `AutoMicSwitch-Setup.exe` 双击运行，装到 `%LOCALAPPDATA%\AutoMicSwitch`，不写系统目录，全程不需要管理员权限。
 
-程序启动后会常驻托盘，同时打开控制台（带 `--startup` 启动时只驻留托盘）。想开机自启，双击 `install-autostart.cmd`；取消用 `uninstall-autostart.cmd`。
+安装时可勾选：
+
+- 开机自动启动（默认勾选）
+- 创建桌面快捷方式（默认勾选）
+- 安装完成后立即运行（默认勾选）
+
+装完从开始菜单或桌面图标启动，浏览器会自动打开控制台 http://127.0.0.1:17817/。带 `--startup` 启动时只驻留托盘，不弹浏览器。
+
+> 项目只提供安装版。装到固定目录是为了让开机自启的路径稳定，更新时也能整包替换。
+
+批量部署想静默装：
+
+```
+AutoMicSwitch-Setup.exe /S            静默安装，装完不启动
+AutoMicSwitch-Setup.exe /S /relaunch  静默安装并启动
+```
 
 ## 配置 rules.txt
 
-`rules.txt` 要放在 exe 同一个目录。一行一条规则，格式是：
+`rules.txt` 放在程序目录里（安装版是 `%LOCALAPPDATA%\AutoMicSwitch`），控制台底部的「打开目录」能直接跳过去。安装包会放一份示例进去。一行一条规则，格式是：
 
 ```
 播放设备关键字|目标麦克风关键字|说明
@@ -86,18 +135,18 @@ fallback=VID_9ABC
 - **信号流向**：左边是当前默认播放设备，中间是联动引擎（显示这次匹配到的规则，走兜底规则时会亮一个黄色标记），右边是当前默认麦克风。发生切换的瞬间，左右两个节点和中间的引擎会闪一下
 - **指标**：联动切换次数、被改回重试次数、规则条数、兜底麦克风
 - **联动规则**：当前 `rules.txt` 解析出来的规则表
-- **设备清单**：当前在线的播放设备和录音设备，默认设备会高亮
+- **设备清单**：当前在线的播放设备和录音设备，默认设备会高亮。**点任意一台就把它切成系统默认**，播放设备改完，联动规则会在下一轮自动跟上
 - **实时日志**：最近 80 条，按级别着色（普通 / 成功 / 警告 / 错误），可以关掉自动滚动
-- **底部操作栏**：暂停 / 恢复联动、立即同步一次、开机自启开关、打开日志文件
+- **底部操作栏**：暂停 / 恢复联动、开机自启开关、检查更新、打开目录、打开日志
 
 ## 托盘菜单
 
 右键托盘图标：
 
 - 打开控制台
-- 立即同步一次
 - 暂停联动 / 恢复联动
 - 开机自启（勾选项）
+- 检查更新
 - 打开日志
 - 打开程序目录
 - 退出
@@ -108,41 +157,54 @@ fallback=VID_9ABC
 
 三种方式，效果一样：
 
-1. 控制台底部勾选「开机自启」
-2. 双击 `install-autostart.cmd`（取消用 `uninstall-autostart.cmd`）
-3. 手动写注册表：
+1. 安装时勾选「开机自动启动」
+2. 控制台底部勾选「开机自启」
+3. 托盘菜单里勾「开机自启」
 
-```
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v AutoMicSwitch /t REG_SZ /d "\"完整路径\AutoMicSwitch.exe\" --startup" /f
-```
+写的是 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下的 `AutoMicSwitch`，值形如 `"完整路径\AutoMicSwitch.exe" --startup`。任务管理器 →「启动应用」里能看到同名条目。
 
-注册表位置在 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，任务管理器 →「启动应用」里能看到名为 `AutoMicSwitch` 的条目。
+程序每次启动会对一遍这条记录：路径和当前 exe 对不上（比如换过安装位置）就自动改过来，不会出现自启指向旧目录的情况。
 
-带 `--startup` 启动时程序不打开浏览器，只驻留托盘。不带参数双击运行时才会自动打开控制台。
+带 `--startup` 启动时不开浏览器，只驻留托盘。
 
-## 命令行参数
+## 自动更新
 
-| 参数 | 说明 |
-| --- | --- |
-| 无 | 启动并打开控制台 |
-| `--startup` | 静默启动，只驻留托盘 |
+程序启动一分钟后查一次，之后每小时一次；托盘菜单点「检查更新」也可以手动查。
+
+版本信息读的是 GitHub Release 里的 `latest.yml` 直链（`releases/latest/download/latest.yml`），不调 API，也就没有频率限制。查到新版本后：
+
+1. 控制台版本号变黄，底部按钮变成「下载 vX.Y.Z」
+2. 点一下开始下载安装包，下完用 `latest.yml` 里的 sha512 校验
+3. 校验通过后按钮变成「重启并更新」，点了就退出、静默安装、自动重新启动
+
+直连 GitHub 不通时会自动按常见本机代理端口（7890 / 7897 / 10809 / 1080 / 8118）逐个重试，都没通则提示去 GitHub 手动下载。
 
 ## 从源码编译
 
-`build.cmd` 用的是系统自带的 C# 编译器，不需要 Visual Studio。核心命令是：
+`build.cmd` 用系统自带的 C# 编译器，不需要 Visual Studio。跑完产出 `dist\AutoMicSwitch-Setup.exe`。
+
+分三步：先用 `tools\IconGen.cs` 生成 `app.ico`，再编译主程序到 `dist\tmp\AutoMicSwitch.exe`（控制台页面和规则示例都是编译时嵌进去的），最后把主程序当资源编进安装包。主程序 exe 只是安装包的素材，不单独对外。
+
+在 Git Bash 里直接调 csc 的话，选项要改用 `-` 前缀（`-nologo`、`-target:winexe` 等），否则会被当成路径转换；跑 `build.cmd` 本身没这个问题。
+
+改完代码重新跑一次即可。注意正在运行的程序会占着文件，重编前先退出。
+
+## 发版
 
 ```
-%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /codepage:65001 ^
-  /target:winexe /platform:anycpu /optimize+ ^
-  /out:dist\AutoMicSwitch.exe ^
-  /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll ^
-  /resource:src\Dashboard.html,Dashboard.html ^
-  src\Program.cs src\AudioEngine.cs src\HttpServer.cs
+pack-release.cmd
 ```
 
-`/resource` 那行是把控制台页面嵌进 exe，所以编译后单文件就能跑。在 Git Bash 里执行时，所有选项要改用 `-` 前缀（`-nologo`、`-target:winexe` 等），否则会被当成路径转换。
+先跑一遍 `build.cmd`，再生成 `dist\latest.yml`（版本、大小、sha512、更新说明取自根目录的 `release-notes.md`）。
 
-改完代码重新跑一次 `build.cmd` 即可。注意 exe 会被正在运行的进程占用，重编前先在托盘里退出。
+发版时把这两个文件传进同一个 GitHub Release：
+
+| 文件 | 作用 |
+| --- | --- |
+| `dist\AutoMicSwitch-Setup.exe` | 资产名必须叫这个，客户端按名字取 |
+| `dist\latest.yml` | 客户端靠它比版本、核 sha512 |
+
+版本号只在 `src\AssemblyInfo.cs` 里维护一处，程序里显示的、安装记录里的、`latest.yml` 里的都从它来。
 
 ## 目录结构
 
@@ -151,11 +213,17 @@ src/
   Program.cs        入口、托盘菜单、控制台 API
   AudioEngine.cs    联动引擎：设备枚举、规则匹配、切换与校验
   HttpServer.cs     本地 HTTP 服务与 JSON 输出
+  Updater.cs        在线更新：版本比对、下载校验、交给安装包替换
+  Setup.cs          安装 / 卸载（主程序作为资源嵌在里面）
+  AssemblyInfo.cs   程序集信息，版本号唯一来源
   Dashboard.html    控制台页面（编译时嵌入 exe）
-build.cmd           一键编译
-run.cmd             直接运行 dist 里的 exe
+tools/
+  IconGen.cs        构建期生成多尺寸 app.ico
+  PackRelease.cs    构建期生成 Release 用的 latest.yml
+build.cmd           一键编译，产出安装包
+pack-release.cmd    编译 + 生成 latest.yml
 rules.example.txt   规则示例
-install-autostart.cmd / uninstall-autostart.cmd
+release-notes.md    更新说明，发版时写进 latest.yml
 docs/               界面预览页与截图
 ```
 
@@ -222,12 +290,38 @@ docs/               界面预览页与截图
 
 ## 卸载
 
-1. 托盘菜单选「退出」
-2. 双击 `uninstall-autostart.cmd` 清掉自启
-3. 删掉整个程序目录
+三种方式，效果一样：
 
-不改动驱动和服务，删干净就是彻底卸载。
+1. Windows「设置 → 应用 → 已安装的应用」里找到 AutoMicSwitch，点卸载
+2. 开始菜单里 AutoMicSwitch 目录下的卸载入口
+3. 直接跑 `%LOCALAPPDATA%\AutoMicSwitch\Uninstall.exe`
+
+卸载会先停掉正在运行的进程，再删掉程序文件、快捷方式、开机自启和卸载登记。安装目录里的 `rules.txt` 和日志会一并删除，要留的先备份。
+
+不改动驱动和服务，删完就是彻底卸载。想静默卸载用 `Uninstall.exe /uninstall /S`。
+
+## 路线图
+
+- [ ] 支持「播放设备 → 同时切换多个输入设备」
+- [ ] 控制台内直接编辑规则并热重载，不用重启
+- [ ] 规则支持按设备显示名匹配（除 VID 外）
+
+有想法欢迎提 Issue 一起讨论。
+
+## 贡献
+
+欢迎 Issue 和 PR。参与前请留意：
+
+1. 提交 Issue 时尽量附上 `AutoMicSwitch.log` 里的相关日志、Windows 版本，以及设备管理器里对应设备的硬件 Id
+2. 提交 PR 请保持「零第三方依赖、单文件编译」的既有风格，能通过 `build.cmd` 编译即可
+3. 代码注释用中文，与现有风格保持一致
+4. 涉及行为变更的改动，请同步更新本 README 与 `rules.example.txt`
+
+## 致谢
+
+- 感谢 Windows Core Audio（MMDevice）与 `IPolicyConfig` 相关公开资料的整理者
+- 控制台视觉参考了常见的深色数据面板风格
 
 ## License
 
-MIT © 2026 沐辉
+[MIT](LICENSE) © 2026 沐辉

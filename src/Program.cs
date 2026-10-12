@@ -21,11 +21,19 @@ namespace AutoMicSwitch
 {
     internal static class Program
     {
-        public const string Version = "2.0.0";
+        // 版本号在 AssemblyInfo.cs 里维护，这里读出来给界面和更新检查用
+        public static readonly string Version = FormatVersion(Assembly.GetExecutingAssembly().GetName().Version);
+
         public const int DefaultPort = 17817;
         public const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         public const string RunValue = "AutoMicSwitch";
         public const string MutexName = "AutoMicSwitch_SingleInstance";
+
+        static string FormatVersion(Version v)
+        {
+            if (v == null) return "0.0.0";
+            return v.Major + "." + v.Minor + "." + v.Build;
+        }
 
         [STAThread]
         static void Main(string[] args)
@@ -83,6 +91,28 @@ namespace AutoMicSwitch
             catch { return false; }
         }
 
+        // 自启项记的是绝对路径，程序被挪了位置（比如从便携版换成安装版）就失效，
+        // 启动时顺手对一遍，发现对不上就改过来
+        public static void SyncAutostartPath()
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(RunKey, false))
+                {
+                    if (k == null) return;
+                    object cur = k.GetValue(RunValue);
+                    if (cur == null) return;
+                    string want = "\"" + Application.ExecutablePath + "\" --startup";
+                    if (string.Equals((string)cur, want, StringComparison.OrdinalIgnoreCase)) return;
+                    using (RegistryKey w = Registry.CurrentUser.CreateSubKey(RunKey))
+                    {
+                        if (w != null) w.SetValue(RunValue, want, RegistryValueKind.String);
+                    }
+                }
+            }
+            catch { }
+        }
+
         public static string LoadDashboardHtml()
         {
             try
@@ -118,11 +148,20 @@ namespace AutoMicSwitch
         NotifyIcon tray;
         MenuItem miPause;
         MenuItem miAuto;
+        MenuItem miUpdate;
+
+        // 更新检查跑在后台线程，回调要回到 UI 线程，借一个隐藏控件做转发
+        readonly Control dispatcher = new Control();
 
         public TrayContext(bool hidden)
         {
+            IntPtr handle = dispatcher.Handle;   // 强制建句柄，BeginInvoke 才有地方落
+            GC.KeepAlive(handle);
+
             engine = new AudioEngine();
             Api.Engine = engine;
+
+            Program.SyncAutostartPath();
 
             string html = Program.LoadDashboardHtml();
             try
@@ -158,8 +197,8 @@ namespace AutoMicSwitch
             MenuItem miOpen = new MenuItem("打开控制台");
             miOpen.Click += delegate { OpenDashboard(); };
 
-            MenuItem miSync = new MenuItem("立即同步一次");
-            miSync.Click += delegate { engine.ApplyNow(); };
+            miUpdate = new MenuItem("检查更新");
+            miUpdate.Click += delegate { CheckUpdate(); };
 
             MenuItem miLog = new MenuItem("打开日志");
             miLog.Click += delegate { OpenPath(engine.LogPath); };
@@ -172,7 +211,7 @@ namespace AutoMicSwitch
 
             MenuItem[] items = new MenuItem[]
             {
-                miOpen, miSync, new MenuItem("-"), miPause, miAuto, new MenuItem("-"), miLog, miDir, new MenuItem("-"), miExit
+                miOpen, new MenuItem("-"), miPause, miAuto, new MenuItem("-"), miUpdate, miLog, miDir, new MenuItem("-"), miExit
             };
 
             tray = new NotifyIcon();
@@ -184,7 +223,42 @@ namespace AutoMicSwitch
 
             RefreshMenu();
 
+            // 更新回调来自后台线程，统一切回 UI 线程再碰托盘和退出
+            Updater.Notify = delegate (string title, string text)
+            {
+                OnUi(delegate { ShowBalloon(title, text); });
+            };
+            Updater.Applied = delegate
+            {
+                OnUi(delegate { Shutdown(); });
+            };
+            Updater.Init(engine);
+
             if (!hidden) OpenDashboard();
+        }
+
+        void OnUi(MethodInvoker action)
+        {
+            try { dispatcher.BeginInvoke(action); }
+            catch { }
+        }
+
+        void CheckUpdate()
+        {
+            ShowBalloon("AutoMicSwitch", "正在检查更新…");
+            Updater.Check(true);
+        }
+
+        void ShowBalloon(string title, string text)
+        {
+            try
+            {
+                tray.BalloonTipTitle = title;
+                tray.BalloonTipText = text;
+                tray.BalloonTipIcon = ToolTipIcon.Info;
+                tray.ShowBalloonTip(5000);
+            }
+            catch { }
         }
 
         void RefreshMenu()
@@ -318,6 +392,17 @@ namespace AutoMicSwitch
             sb.Append("\"exePath\":").Append(Json.Str(Application.ExecutablePath)).Append(",");
             sb.Append("\"logPath\":").Append(Json.Str(e.LogPath)).Append(",");
             sb.Append("\"configPath\":").Append(Json.Str(e.ConfigPath)).Append(",");
+            sb.Append("\"installed\":").Append(Json.Bool(IsInstalled())).Append(",");
+
+            UpdateState us = Updater.Snapshot();
+            sb.Append("\"update\":{");
+            sb.Append("\"status\":").Append(Json.Str(us.Status)).Append(",");
+            sb.Append("\"latest\":").Append(Json.Str(us.Latest)).Append(",");
+            sb.Append("\"notes\":").Append(Json.Str(us.Notes)).Append(",");
+            sb.Append("\"percent\":").Append(Json.Num(us.Percent)).Append(",");
+            sb.Append("\"message\":").Append(Json.Str(us.Message)).Append(",");
+            sb.Append("\"tick\":").Append(Json.Num(us.Tick));
+            sb.Append("},");
 
             sb.Append("\"playback\":{");
             sb.Append("\"name\":").Append(Json.Str(playbackName)).Append(",");
@@ -385,6 +470,7 @@ namespace AutoMicSwitch
                 if (i > 0) sb.Append(",");
                 sb.Append("{\"name\":").Append(Json.Str(d.Name))
                   .Append(",\"vid\":").Append(Json.Str(d.Vid))
+                  .Append(",\"id\":").Append(Json.Str(d.Id))
                   .Append(",\"default\":").Append(Json.Bool(isDef)).Append("}");
             }
             sb.Append("]");
@@ -401,7 +487,8 @@ namespace AutoMicSwitch
             {
                 if (Engine.IsPaused) Engine.Resume(); else Engine.Pause();
             }
-            else if (action == "apply") Engine.ApplyNow();
+            else if (action == "setplayback") Engine.SetDefaultDevice(Flow.Render, Pick(body, "id"));
+            else if (action == "setcapture") Engine.SetDefaultDevice(Flow.Capture, Pick(body, "id"));
             else if (action == "autostart")
             {
                 bool ok = Program.SetAutostart(value);
@@ -411,8 +498,30 @@ namespace AutoMicSwitch
             {
                 try { Process.Start("explorer.exe", "\"" + Engine.LogPath + "\""); } catch { }
             }
+            else if (action == "opendir")
+            {
+                try { Process.Start("explorer.exe", "\"" + AppDomain.CurrentDomain.BaseDirectory + "\""); } catch { }
+            }
+            else if (action == "checkupdate") Updater.Check(true);
+            else if (action == "downloadupdate") Updater.Download();
+            else if (action == "applyupdate") Updater.Apply();
+            else if (action == "openreleases")
+            {
+                try { Process.Start("https://github.com/" + Updater.Repo + "/releases"); } catch { }
+            }
 
             return Status();
+        }
+
+        // 装没装过：安装版落在 %LOCALAPPDATA%\AutoMicSwitch 下
+        static bool IsInstalled()
+        {
+            try
+            {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AutoMicSwitch");
+                return Application.ExecutablePath.StartsWith(dir, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
         }
 
         static string Pick(string json, string key)

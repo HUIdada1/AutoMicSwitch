@@ -1,4 +1,6 @@
 @echo off
+rem 脚本里有中文，先把控制台切到 UTF-8，不然 cmd 按本地代码页读会乱码
+chcp 65001 >nul
 setlocal
 title AutoMicSwitch - Build
 cd /d "%~dp0"
@@ -19,30 +21,65 @@ if not exist "%CSC%" (
 )
 
 if not exist "dist" mkdir "dist"
+if not exist "dist\tmp" mkdir "dist\tmp"
 
-echo [1/2] Compiling ...
+rem ---------- 1. 图标 ----------
+echo [1/4] 生成图标 ...
+set "ICONOPT="
+"%CSC%" /nologo /codepage:65001 /target:exe /platform:anycpu /optimize+ ^
+  /out:"%ROOT%dist\tmp\IconGen.exe" ^
+  /reference:System.dll /reference:System.Drawing.dll ^
+  "%ROOT%tools\IconGen.cs" >nul 2>&1
+if not errorlevel 1 (
+  "%ROOT%dist\tmp\IconGen.exe" "%ROOT%dist\tmp\app.ico" >nul 2>&1
+  if not errorlevel 1 set "ICONOPT=/win32icon:%ROOT%dist\tmp\app.ico"
+)
+if not defined ICONOPT echo       图标没生成出来，用默认图标继续
+
+rem ---------- 2. 主程序 ----------
+rem 只做安装版对外，主程序 exe 是安装包的素材，放 tmp 里不外发
+echo [2/4] 编译主程序 ...
 "%CSC%" /nologo /codepage:65001 /target:winexe /platform:anycpu /optimize+ ^
-  /out:"%ROOT%dist\AutoMicSwitch.exe" ^
+  /out:"%ROOT%dist\tmp\AutoMicSwitch.exe" ^
+  %ICONOPT% ^
   /reference:System.dll ^
   /reference:System.Drawing.dll ^
   /reference:System.Windows.Forms.dll ^
   /resource:"%ROOT%src\Dashboard.html",Dashboard.html ^
-  "%ROOT%src\Program.cs" "%ROOT%src\AudioEngine.cs" "%ROOT%src\HttpServer.cs"
+  "%ROOT%src\Program.cs" "%ROOT%src\AudioEngine.cs" "%ROOT%src\HttpServer.cs" ^
+  "%ROOT%src\Updater.cs" "%ROOT%src\AssemblyInfo.cs"
 
 if errorlevel 1 (
   echo.
-  echo [ERROR] Build FAILED.
+  echo [ERROR] 主程序编译失败。
   pause
   exit /b 1
 )
 
-if not exist "dist\rules.txt" copy /y "rules.example.txt" "dist\rules.txt" >nul
+rem ---------- 3. 安装包 ----------
+echo [3/4] 编译安装包 ...
+"%CSC%" /nologo /codepage:65001 /target:winexe /platform:anycpu /optimize+ ^
+  /out:"%ROOT%dist\AutoMicSwitch-Setup.exe" ^
+  %ICONOPT% ^
+  /reference:System.dll ^
+  /reference:System.Drawing.dll ^
+  /reference:System.Windows.Forms.dll ^
+  /resource:"%ROOT%dist\tmp\AutoMicSwitch.exe",AutoMicSwitch.exe ^
+  /resource:"%ROOT%rules.example.txt",rules.example.txt ^
+  "%ROOT%src\Setup.cs" "%ROOT%src\AssemblyInfo.cs"
 
-echo [2/2] Done.
+if errorlevel 1 (
+  echo.
+  echo [ERROR] 安装包编译失败。
+  pause
+  exit /b 1
+)
+
+echo [4/4] 完成。
 echo.
-echo [OK] dist\AutoMicSwitch.exe
+echo   dist\AutoMicSwitch-Setup.exe   安装包，对外只发这一个
 echo.
-echo Next: edit dist\rules.txt, then run dist\AutoMicSwitch.exe
-echo Console: http://127.0.0.1:17817/
+echo 安装位置：%%LOCALAPPDATA%%\AutoMicSwitch
+echo 要发版就跑 pack-release.cmd，会在 dist 里生成 latest.yml
 echo.
 pause

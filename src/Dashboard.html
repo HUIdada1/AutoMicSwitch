@@ -46,6 +46,7 @@ body{
 }
 h1{margin:0;font-size:20px;font-weight:650;letter-spacing:.2px;display:flex;align-items:baseline;gap:9px}
 .ver{font:11px/1 var(--mono);color:var(--accent);border:1px solid var(--line2);border-radius:20px;padding:4px 9px;background:rgba(56,189,248,.07)}
+.ver.new{color:#FBBF24;border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.1);cursor:help}
 .sub{margin:2px 0 0;color:var(--muted);font-size:12.5px}
 .topright{display:flex;align-items:center;gap:18px}
 .pill{display:flex;align-items:center;gap:8px;padding:8px 15px;border-radius:22px;font-weight:600;font-size:13px;
@@ -137,8 +138,10 @@ td.mono,code{font-family:var(--mono);font-size:12.5px;color:var(--accent)}
 .dev-cols h3{margin:0 0 10px;font-size:11.5px;color:var(--dim);letter-spacing:.5px;font-weight:500;text-transform:uppercase}
 ul.dev{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 ul.dev li{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.022);
-  border:1px solid rgba(56,189,248,.08);font-size:12.5px;transition:.25s}
-ul.dev li.on{background:rgba(56,189,248,.1);border-color:var(--line2)}
+  border:1px solid rgba(56,189,248,.08);font-size:12.5px;transition:.25s;cursor:pointer}
+ul.dev li:hover{background:rgba(56,189,248,.09);border-color:var(--line2);transform:translateX(2px)}
+ul.dev li.on{background:rgba(56,189,248,.1);border-color:var(--line2);cursor:default}
+ul.dev li.on:hover{transform:none}
 ul.dev li .b{width:6px;height:6px;border-radius:50%;background:#31465e;flex:0 0 auto}
 ul.dev li.on .b{background:var(--accent);box-shadow:0 0 9px var(--accent)}
 ul.dev li .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -183,6 +186,9 @@ input[type=checkbox]:checked::after{left:18px;background:#fff}
 .btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
 .spacer{flex:1}
 .path{font:11px/1 var(--mono);color:var(--dim);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.updmsg{font:11.5px/1.4 var(--muted);max-width:290px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.updmsg.warn{color:#FCD34D}
+.updmsg.err{color:#FCA5A5}
 
 @media(max-width:900px){
   .cols{grid-template-columns:1fr}
@@ -265,7 +271,7 @@ input[type=checkbox]:checked::after{left:18px;background:#fff}
       </section>
 
       <section class="card devices">
-        <h2>设备清单 <span class="hint">实时</span></h2>
+        <h2>设备清单 <span class="hint">点一下切默认</span></h2>
         <div class="dev-cols">
           <div><h3>播放设备</h3><ul class="dev" id="pbList"></ul></div>
           <div><h3>录音设备</h3><ul class="dev" id="capList"></ul></div>
@@ -285,17 +291,19 @@ input[type=checkbox]:checked::after{left:18px;background:#fff}
 
 <footer class="actionbar">
   <button class="btn primary" id="btnToggle">暂停联动</button>
-  <button class="btn" id="btnSync">立即同步</button>
   <label class="chk"><input type="checkbox" id="autoStart"> 开机自启</label>
+  <button class="btn" id="btnUpdate">检查更新</button>
+  <span class="updmsg" id="updMsg"></span>
   <span class="spacer"></span>
   <span class="path" id="exePath"></span>
+  <button class="btn ghost" id="btnDir">打开目录</button>
   <button class="btn ghost" id="btnLog">打开日志</button>
 </footer>
 
 <script>
 (function(){
   var $ = function(id){ return document.getElementById(id); };
-  var lastTick = -1, lastLogKey = '', booted = false, guard = false, connected = true;
+  var lastTick = -1, lastLogKey = '', booted = false, guard = false, connected = true, lastUpdate = {};
 
   function fmtUptime(s){
     s = Math.max(0, parseInt(s,10) || 0);
@@ -341,6 +349,7 @@ input[type=checkbox]:checked::after{left:18px;background:#fff}
     $('fbKey').textContent = d.fallback || '未设置（保持不变）';
     $('exePath').textContent = d.exePath || '';
     $('btnToggle').textContent = d.paused ? '恢复联动' : '暂停联动';
+    renderUpdate(d.update);
 
     guard = true;
     $('autoStart').checked = !!d.autostart;
@@ -354,8 +363,8 @@ input[type=checkbox]:checked::after{left:18px;background:#fff}
     if(!rb) rb = '<tr><td colspan="4" class="note">未配置规则</td></tr>';
     $('ruleBody').innerHTML = rb;
 
-    $('pbList').innerHTML = devList(d.devicesPlayback);
-    $('capList').innerHTML = devList(d.devicesCapture);
+    $('pbList').innerHTML = devList(d.devicesPlayback, 'render');
+    $('capList').innerHTML = devList(d.devicesCapture, 'capture');
 
     // 日志
     var logs = d.log || [];
@@ -382,13 +391,63 @@ input[type=checkbox]:checked::after{left:18px;background:#fff}
     booted = true;
   }
 
-  function devList(arr){
+  function renderUpdate(u){
+    lastUpdate = u || {};
+    var btn = $('btnUpdate'), msg = $('updMsg'), ver = $('ver');
+    var s = lastUpdate.status || 'idle';
+
+    if(s === 'checking'){ btn.textContent = '检查中…'; btn.disabled = true; }
+    else if(s === 'downloading'){ btn.textContent = '下载中 ' + (lastUpdate.percent||0) + '%'; btn.disabled = true; }
+    else if(s === 'available'){ btn.textContent = '下载 v' + lastUpdate.latest; btn.disabled = false; }
+    else if(s === 'ready'){ btn.textContent = '重启并更新'; btn.disabled = false; }
+    else { btn.textContent = '检查更新'; btn.disabled = false; }
+
+    msg.className = 'updmsg';
+    if(s === 'available'){
+      msg.textContent = '发现 v' + lastUpdate.latest + '，点右边按钮下载';
+      msg.className = 'updmsg warn';
+      ver.className = 'ver new';
+      ver.title = lastUpdate.notes ? ('更新说明：\n' + lastUpdate.notes) : '有新版本可用';
+    } else if(s === 'ready'){
+      msg.textContent = 'v' + lastUpdate.latest + ' 已就绪，重启后生效';
+      msg.className = 'updmsg warn';
+      ver.className = 'ver new';
+      ver.title = '新版本已下载，重启程序即可换上';
+    } else if(s === 'error'){
+      msg.textContent = lastUpdate.message || '检查更新失败';
+      msg.className = 'updmsg err';
+      ver.className = 'ver';
+      ver.title = '';
+    } else if(s === 'latest'){
+      msg.textContent = '已是最新版本';
+      ver.className = 'ver';
+      ver.title = '';
+    } else {
+      msg.textContent = lastUpdate.message || '';
+      ver.className = 'ver';
+      ver.title = '';
+    }
+  }
+
+  function devList(arr, kind){
     arr = arr || [];
     if(!arr.length) return '<li><span class="b"></span><span class="nm">无设备</span></li>';
     return arr.map(function(x){
-      return '<li class="'+(x.default?'on':'')+'"><span class="b"></span>'
-           + '<span class="nm">'+esc(x.name)+'</span><span class="vd">'+esc(x.vid)+'</span></li>';
+      return '<li class="'+(x.default?'on':'')+'" data-id="'+esc(x.id)+'" data-kind="'+kind+'"'
+           + ' title="'+(x.default?'当前默认设备':'点一下设为默认')+'">'
+           + '<span class="b"></span><span class="nm">'+esc(x.name)+'</span><span class="vd">'+esc(x.vid)+'</span></li>';
     }).join('');
+  }
+
+  // 设备列表点击：没拿到 id 的（比如「无设备」那条）直接忽略
+  function onDevClick(e){
+    var li = e.target;
+    while(li && li.tagName !== 'LI') li = li.parentNode;
+    if(!li || !li.getAttribute) return;
+    if(li.className.indexOf('on') >= 0) return;   // 已经是默认了，不用再切
+    var id = li.getAttribute('data-id');
+    if(!id) return;
+    act(li.getAttribute('data-kind') === 'render' ? 'setplayback' : 'setcapture', undefined, id);
   }
 
   function setConn(ok){
@@ -408,18 +467,33 @@ input[type=checkbox]:checked::after{left:18px;background:#fff}
       .catch(function(){ setConn(false); });
   }
 
-  function act(action, value){
+  function act(action, value, id){
+    var payload = {action:action, value:value};
+    if(id) payload.id = id;
     fetch('/api/action', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:action, value:value})
+      body:JSON.stringify(payload)
     }).then(function(r){ return r.json(); }).then(function(d){ if(d && d.ok) render(d); tick(); })
       .catch(function(){});
   }
 
   $('btnToggle').onclick = function(){ act('toggle'); };
-  $('btnSync').onclick = function(){ act('apply'); };
+  $('btnDir').onclick = function(){ act('opendir'); };
   $('btnLog').onclick = function(){ act('openlog'); };
+  $('pbList').addEventListener('click', onDevClick);
+  $('capList').addEventListener('click', onDevClick);
+  $('btnUpdate').onclick = function(){
+    var s = lastUpdate.status || 'idle';
+    if(s === 'available') act('downloadupdate');
+    else if(s === 'ready'){
+      if(confirm('现在重启并更新？程序会退出，换上新版本后自动启动。')) act('applyupdate');
+    }
+    else act('checkupdate');
+  };
+  $('ver').onclick = function(){
+    if(lastUpdate.status === 'available' || lastUpdate.status === 'ready') act('openreleases');
+  };
   $('autoStart').onchange = function(){
     if(guard) return;
     act('autostart', this.checked);
