@@ -38,7 +38,8 @@ namespace AutoMicSwitch
         const string LatestYmlUrl = ReleasesBase + "/latest/download/latest.yml";
         const string LatestSetupUrl = ReleasesBase + "/latest/download/AutoMicSwitch-Setup.exe";
 
-        const int FetchTimeoutMs = 12000;
+        const int FetchTimeoutMs = 8000;      // 取 latest.yml，小文件，卡住就快点换路
+        const int DownloadTimeoutMs = 30000;  // 下载安装包，留宽一点
         const int CheckIntervalMs = 60 * 60 * 1000;  // 后台每小时查一次
         const int FirstCheckDelayMs = 60 * 1000;     // 启动一分钟后再查，避开启动高峰
         const int ManualCooldownMs = 20 * 1000;
@@ -298,17 +299,49 @@ namespace AutoMicSwitch
 
         // ---------- 网络 ----------
         // 直连 → 候选代理逐个试；只有网络类错误才值得换代理，
-        // HTTP 404 这种换到哪个代理都一样，直接收工
+        // HTTP 404 这种换到哪个代理都一样，直接收工。
+        // 上次走通的那条路会记住，下次先试它——不然每次都要先等直连超时一轮。
+        static int goodPath = -2;   // -2 未知，-1 直连，>=0 对应 ProxyCandidates 下标
+
+        static List<int> AttemptOrder()
+        {
+            List<int> order = new List<int>();
+            if (goodPath >= -1) order.Add(goodPath);
+            order.Add(-1);
+            for (int i = 0; i < ProxyCandidates.Length; i++)
+            {
+                if (!order.Contains(i)) order.Add(i);
+            }
+            return order;
+        }
+
+        static string ProxyAt(int idx)
+        {
+            return idx < 0 ? null : ProxyCandidates[idx];
+        }
+
+        static string PathName(int idx)
+        {
+            return idx < 0 ? "直连" : ProxyCandidates[idx];
+        }
+
         static string FetchText(string url, out string err)
         {
             err = null;
-            for (int i = -1; i < ProxyCandidates.Length; i++)
+            foreach (int idx in AttemptOrder())
             {
-                string proxy = i < 0 ? null : ProxyCandidates[i];
-                try { return HttpGetText(url, proxy); }
+                int t0 = Environment.TickCount;
+                try
+                {
+                    string r = HttpGetText(url, ProxyAt(idx));
+                    goodPath = idx;
+                    Log("info", "更新检查走" + PathName(idx) + "（" + (Environment.TickCount - t0) + "ms）");
+                    return r;
+                }
                 catch (Exception e)
                 {
                     err = FriendlyError(e);
+                    Log("info", "更新检查试" + PathName(idx) + "不通（" + (Environment.TickCount - t0) + "ms）：" + e.Message);
                     if (!IsNetworkError(e)) return null;
                 }
             }
@@ -318,13 +351,20 @@ namespace AutoMicSwitch
         static bool FetchFile(string url, string path, out string err)
         {
             err = null;
-            for (int i = -1; i < ProxyCandidates.Length; i++)
+            foreach (int idx in AttemptOrder())
             {
-                string proxy = i < 0 ? null : ProxyCandidates[i];
-                try { HttpGetFile(url, proxy, path); return true; }
+                int t0 = Environment.TickCount;
+                try
+                {
+                    HttpGetFile(url, ProxyAt(idx), path);
+                    goodPath = idx;
+                    Log("info", "更新下载走" + PathName(idx) + "（" + (Environment.TickCount - t0) + "ms）");
+                    return true;
+                }
                 catch (Exception e)
                 {
                     err = FriendlyError(e);
+                    Log("info", "更新下载试" + PathName(idx) + "不通（" + (Environment.TickCount - t0) + "ms）：" + e.Message);
                     try { if (File.Exists(path)) File.Delete(path); } catch { }
                     if (!IsNetworkError(e)) return false;
                 }
@@ -332,9 +372,17 @@ namespace AutoMicSwitch
             return false;
         }
 
+        static void Log(string level, string text)
+        {
+            if (engine != null)
+            {
+                try { engine.Log(level, text); } catch { }
+            }
+        }
+
         static string HttpGetText(string url, string proxy)
         {
-            HttpWebRequest req = MakeRequest(url, proxy);
+            HttpWebRequest req = MakeRequest(url, proxy, FetchTimeoutMs);
             using (WebResponse resp = req.GetResponse())
             using (Stream s = resp.GetResponseStream())
             using (StreamReader r = new StreamReader(s, Encoding.UTF8))
@@ -343,7 +391,7 @@ namespace AutoMicSwitch
 
         static void HttpGetFile(string url, string proxy, string path)
         {
-            HttpWebRequest req = MakeRequest(url, proxy);
+            HttpWebRequest req = MakeRequest(url, proxy, DownloadTimeoutMs);
             using (WebResponse resp = req.GetResponse())
             using (Stream s = resp.GetResponseStream())
             using (FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write))
@@ -366,15 +414,22 @@ namespace AutoMicSwitch
             }
         }
 
-        static HttpWebRequest MakeRequest(string url, string proxy)
+        static HttpWebRequest MakeRequest(string url, string proxy, int timeoutMs)
         {
-            // .NET 4.x 默认只协商到 TLS 1.0，GitHub 那边要 1.2
-            try { ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072; } catch { }
+            // TLS：老版本 .NET 默认不协商 1.2，得手动补上；但新版本默认值是 0
+            // （SystemDefault，交给系统协商 1.2/1.3）。0 的时候千万别动——
+            // 一旦写成固定的 3072 就只剩 TLS 1.2，部分网络下握手会被拖到超时。
+            try
+            {
+                SecurityProtocolType cur = ServicePointManager.SecurityProtocol;
+                if (cur != 0) ServicePointManager.SecurityProtocol = cur | (SecurityProtocolType)3072;
+            }
+            catch { }
 
             HttpWebRequest req = (HttpWebRequest)WebRequest.Create(url);
             req.UserAgent = "AutoMicSwitch/" + Program.Version;
-            req.Timeout = FetchTimeoutMs;
-            req.ReadWriteTimeout = FetchTimeoutMs;
+            req.Timeout = timeoutMs;
+            req.ReadWriteTimeout = timeoutMs;
             req.AllowAutoRedirect = true;
             req.Proxy = proxy == null ? null : new WebProxy(proxy);
             return req;

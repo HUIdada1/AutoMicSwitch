@@ -1,5 +1,4 @@
 @echo off
-chcp 65001 >nul
 setlocal
 title AutoMicSwitch - Pack Release
 cd /d "%~dp0"
@@ -13,36 +12,36 @@ echo   AutoMicSwitch - Pack Release
 echo ==============================================
 echo.
 
-rem build.cmd 结尾有 pause，重定向一下免得卡住
+rem build.cmd ends with pause, feed it nul so it does not block here
 call "%~dp0build.cmd" < nul
 if errorlevel 1 (
-  echo [ERROR] 构建没过，先修好再来发版。
+  echo [ERROR] build failed, fix it before packing a release.
   pause
   exit /b 1
 )
 
 echo.
-echo [pack] 生成 latest.yml ...
+echo [pack] Generating latest.yml ...
 "%CSC%" /nologo /codepage:65001 /target:exe /platform:anycpu /optimize+ ^
   /out:"%ROOT%dist\tmp\PackRelease.exe" ^
   /reference:System.dll ^
   "%ROOT%tools\PackRelease.cs"
 if errorlevel 1 (
-  echo [ERROR] 打包工具编译失败。
+  echo [ERROR] PackRelease build FAILED.
   pause
   exit /b 1
 )
 
 "%ROOT%dist\tmp\PackRelease.exe" "%ROOT%dist\AutoMicSwitch-Setup.exe" "%ROOT%dist\latest.yml" "%ROOT%release-notes.md"
 if errorlevel 1 (
-  echo [ERROR] latest.yml 生成失败。
+  echo [ERROR] latest.yml generation FAILED.
   pause
   exit /b 1
 )
 
 echo.
-echo 发版要传的就是这两个文件，放进同一个 Release：
-echo   dist\AutoMicSwitch-Setup.exe   资产名必须叫这个，客户端按名字取
-echo   dist\latest.yml                客户端靠它比版本、核 sha512
+echo Upload these two files into the same GitHub Release:
+echo   dist\AutoMicSwitch-Setup.exe   asset name must match exactly, the client fetches it by name
+echo   dist\latest.yml                the client reads it for version and sha512
 echo.
 pause

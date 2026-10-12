@@ -1,6 +1,4 @@
 @echo off
-rem 脚本里有中文，先把控制台切到 UTF-8，不然 cmd 按本地代码页读会乱码
-chcp 65001 >nul
 setlocal
 title AutoMicSwitch - Build
 cd /d "%~dp0"
@@ -23,8 +21,8 @@ if not exist "%CSC%" (
 if not exist "dist" mkdir "dist"
 if not exist "dist\tmp" mkdir "dist\tmp"
 
-rem ---------- 1. 图标 ----------
-echo [1/4] 生成图标 ...
+rem ---------- 1. app icon ----------
+echo [1/4] Generating app icon ...
 set "ICONOPT="
 "%CSC%" /nologo /codepage:65001 /target:exe /platform:anycpu /optimize+ ^
   /out:"%ROOT%dist\tmp\IconGen.exe" ^
@@ -34,11 +32,11 @@ if not errorlevel 1 (
   "%ROOT%dist\tmp\IconGen.exe" "%ROOT%dist\tmp\app.ico" >nul 2>&1
   if not errorlevel 1 set "ICONOPT=/win32icon:%ROOT%dist\tmp\app.ico"
 )
-if not defined ICONOPT echo       图标没生成出来，用默认图标继续
+if not defined ICONOPT echo       icon generation failed, falling back to default icon
 
-rem ---------- 2. 主程序 ----------
-rem 只做安装版对外，主程序 exe 是安装包的素材，放 tmp 里不外发
-echo [2/4] 编译主程序 ...
+rem ---------- 2. main program ----------
+rem the raw exe is only an ingredient of the installer, it is not shipped on its own
+echo [2/4] Compiling main program ...
 "%CSC%" /nologo /codepage:65001 /target:winexe /platform:anycpu /optimize+ ^
   /out:"%ROOT%dist\tmp\AutoMicSwitch.exe" ^
   %ICONOPT% ^
@@ -51,13 +49,13 @@ echo [2/4] 编译主程序 ...
 
 if errorlevel 1 (
   echo.
-  echo [ERROR] 主程序编译失败。
+  echo [ERROR] Main program build FAILED.
   pause
   exit /b 1
 )
 
-rem ---------- 3. 安装包 ----------
-echo [3/4] 编译安装包 ...
+rem ---------- 3. installer ----------
+echo [3/4] Compiling installer ...
 "%CSC%" /nologo /codepage:65001 /target:winexe /platform:anycpu /optimize+ ^
   /out:"%ROOT%dist\AutoMicSwitch-Setup.exe" ^
   %ICONOPT% ^
@@ -70,16 +68,16 @@ echo [3/4] 编译安装包 ...
 
 if errorlevel 1 (
   echo.
-  echo [ERROR] 安装包编译失败。
+  echo [ERROR] Installer build FAILED.
   pause
   exit /b 1
 )
 
-echo [4/4] 完成。
+echo [4/4] Done.
 echo.
-echo   dist\AutoMicSwitch-Setup.exe   安装包，对外只发这一个
+echo   dist\AutoMicSwitch-Setup.exe   installer, the only artifact to ship
 echo.
-echo 安装位置：%%LOCALAPPDATA%%\AutoMicSwitch
-echo 要发版就跑 pack-release.cmd，会在 dist 里生成 latest.yml
+echo Installs to: %%LOCALAPPDATA%%\AutoMicSwitch
+echo Run pack-release.cmd to also generate dist\latest.yml
 echo.
 pause
