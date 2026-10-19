@@ -1,7 +1,10 @@
 // IconGen.cs — 构建期小工具
 //
-// 把托盘图标那套画法按几个尺寸各渲染一遍，拼成 .ico 给 exe 当图标，
+// 把 AppIcon 那套画法按几个尺寸各渲染一遍，拼成 .ico 给 exe 当图标，
 // 免得装完之后快捷方式是张白纸。只在编译时跑一次，不参与主程序。
+//
+// 画法本身在 src\AppIcon.cs 里，跟托盘图标、窗口图标共用一份，
+// 改一处三处一起变，不会出现「快捷方式图标和托盘图标长得不一样」。
 //
 // 用法：IconGen.exe <输出路径.ico>
 //
@@ -9,9 +12,9 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
+using AutoMicSwitch;
 
 static class IconGen
 {
@@ -22,7 +25,7 @@ static class IconGen
         string outPath = args.Length > 0 ? args[0] : "app.ico";
 
         List<byte[]> frames = new List<byte[]>();
-        foreach (int s in Sizes) frames.Add(Render(s));
+        foreach (int s in Sizes) frames.Add(Png(s));
 
         string dir = Path.GetDirectoryName(Path.GetFullPath(outPath));
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
@@ -31,56 +34,14 @@ static class IconGen
         Console.WriteLine("icon written: " + outPath);
     }
 
-    // 画法跟 Program.cs 里的托盘图标保持一致，这里只是换个尺寸重画
-    static byte[] Render(int size)
+    static byte[] Png(int size)
     {
-        using (Bitmap bmp = new Bitmap(size, size, PixelFormat.Format32bppArgb))
+        using (Bitmap bmp = AppIcon.Render(size))
+        using (MemoryStream ms = new MemoryStream())
         {
-            using (Graphics g = Graphics.FromImage(bmp))
-            {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.Clear(Color.Transparent);
-                g.ScaleTransform(size / 32f, size / 32f);
-
-                using (GraphicsPath path = RoundedRect(new RectangleF(1, 1, 30, 30), 8))
-                using (LinearGradientBrush b = new LinearGradientBrush(
-                    new RectangleF(0, 0, 32, 32), Color.FromArgb(56, 189, 248), Color.FromArgb(99, 102, 241), 45f))
-                    g.FillPath(b, path);
-
-                using (SolidBrush w = new SolidBrush(Color.FromArgb(235, 240, 255)))
-                {
-                    using (GraphicsPath cap = RoundedRect(new RectangleF(12, 6, 8, 14), 4))
-                        g.FillPath(w, cap);
-                    g.FillRectangle(w, 14, 20, 4, 4);
-                    using (Pen p = new Pen(Color.FromArgb(235, 240, 255), 2.2f))
-                    {
-                        p.StartCap = LineCap.Round;
-                        p.EndCap = LineCap.Round;
-                        g.DrawArc(p, 9, 12, 14, 12, 0, 180);
-                        g.DrawLine(p, 16, 24, 16, 27);
-                        g.DrawLine(p, 12, 27, 20, 27);
-                    }
-                }
-            }
-
-            using (MemoryStream ms = new MemoryStream())
-            {
-                bmp.Save(ms, ImageFormat.Png);
-                return ms.ToArray();
-            }
+            bmp.Save(ms, ImageFormat.Png);
+            return ms.ToArray();
         }
-    }
-
-    static GraphicsPath RoundedRect(RectangleF r, float radius)
-    {
-        float d = radius * 2;
-        GraphicsPath p = new GraphicsPath();
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
     }
 
     // 每个尺寸塞一张 PNG（Vista 以后都认），省得自己拼 DIB 和掩码

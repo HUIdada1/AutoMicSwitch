@@ -1,293 +1,674 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="__INITIAL_THEME__">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AutoMicSwitch · 音频联动控制台</title>
+<title>AutoMicSwitch · 音频联动</title>
 <style>
+/* ============================================================
+   主题令牌
+   ------------------------------------------------------------
+   data-theme 由 C# 在喂页面之前就填好了（跟随系统时也已解析成
+   具体值），所以首帧就是对的，不会先亮后暗闪一下。
+   ============================================================ */
 :root{
-  --bg:#070B12; --panel:rgba(17,25,39,.72); --panel2:rgba(13,20,32,.85);
-  --line:rgba(56,189,248,.14); --line2:rgba(56,189,248,.28);
-  --txt:#E6EDF7; --muted:#8CA0B8; --dim:#5A6E86;
-  --accent:#38BDF8; --accent2:#22D3EE; --indigo:#6366F1;
-  --ok:#34D399; --warn:#FBBF24; --err:#F87171;
-  --mono:"JetBrains Mono","Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace;
-  --r:16px;
+  --bg:#F6F7F9;
+  --elev:#FFFFFF;
+  --sunken:#EEF0F4;
+  --line:#E2E6ED;
+  --line-soft:#EDF0F5;
+  --txt:#161C26;
+  --txt-2:#5C6879;
+  --txt-3:#8B96A6;
+  --accent:#1E76AC;
+  --accent-soft:rgba(30,118,172,.09);
+  --accent-line:rgba(30,118,172,.28);
+  --accent-ink:#FFFFFF;
+  --ok:#12855C;
+  --ok-soft:rgba(18,133,92,.1);
+  --warn:#A97212;
+  --warn-soft:rgba(169,114,18,.1);
+  --err:#C0473F;
+  --err-soft:rgba(192,71,63,.09);
+  --banner-bg:#FBEDEB;
+  --seg-on:#FFFFFF;
+  --shadow:0 1px 2px rgba(22,28,38,.05), 0 8px 24px rgba(22,28,38,.05);
+  --glow:rgba(30,118,172,.10);
+  --grid:rgba(22,28,38,.045);
+  --scroll:rgba(22,28,38,.18);
+  --scroll-hover:rgba(22,28,38,.3);
+  --veil:rgba(22,28,38,.32);
+  color-scheme:light;
 }
+:root[data-theme="dark"]{
+  --bg:#0B0E14;
+  --elev:#131822;
+  --sunken:#080A10;
+  --line:#232A37;
+  --line-soft:#1A2029;
+  --txt:#E8EDF5;
+  --txt-2:#9AA7BA;
+  --txt-3:#6B7789;
+  --accent:#4EA8DE;
+  --accent-soft:rgba(78,168,222,.12);
+  --accent-line:rgba(78,168,222,.3);
+  --accent-ink:#04141F;
+  --ok:#3FB98A;
+  --ok-soft:rgba(63,185,138,.12);
+  --warn:#D9A441;
+  --warn-soft:rgba(217,164,65,.12);
+  --err:#DC6B6B;
+  --err-soft:rgba(220,107,107,.12);
+  --banner-bg:#2B1917;
+  --seg-on:#1E2634;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.34);
+  --glow:rgba(78,168,222,.13);
+  --grid:rgba(140,180,220,.05);
+  --scroll:rgba(180,205,230,.18);
+  --scroll-hover:rgba(180,205,230,.32);
+  --veil:rgba(4,7,12,.62);
+  color-scheme:dark;
+}
+
+:root{
+  --sans:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"Cascadia Mono",Consolas,"JetBrains Mono",ui-monospace,monospace;
+  --r-lg:14px;
+  --r-md:10px;
+  --r-sm:7px;
+  --top:66px;
+}
+
 *{box-sizing:border-box}
 html,body{height:100%}
 body{
-  margin:0;background:var(--bg);color:var(--txt);overflow-x:hidden;
-  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif;
+  margin:0;
+  background:var(--bg);
+  color:var(--txt);
+  font:13.5px/1.6 var(--sans);
   -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  transition:background .22s ease,color .22s ease;
 }
-/* ---------- 背景 ---------- */
-.bg-grid{
-  position:fixed;inset:0;z-index:0;pointer-events:none;
-  background-image:linear-gradient(rgba(56,189,248,.055) 1px,transparent 1px),
-                   linear-gradient(90deg,rgba(56,189,248,.055) 1px,transparent 1px);
-  background-size:46px 46px;
-  mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 20%,transparent 78%);
-  -webkit-mask-image:radial-gradient(ellipse 90% 70% at 50% 0%,#000 20%,transparent 78%);
-}
-.glow{position:fixed;border-radius:50%;filter:blur(90px);z-index:0;pointer-events:none;opacity:.5}
-.g1{width:560px;height:560px;top:-260px;left:-140px;background:radial-gradient(circle,rgba(56,189,248,.55),transparent 68%)}
-.g2{width:520px;height:520px;top:-200px;right:-160px;background:radial-gradient(circle,rgba(99,102,241,.5),transparent 68%)}
 
-.wrap{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:26px 24px 108px}
+/* 背景：一层极淡网格 + 顶部柔光，克制到几乎看不见，只提供一点纵深 */
+.bg{position:fixed;inset:0;z-index:0;pointer-events:none}
+.bg::before{
+  content:"";position:absolute;inset:0;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),
+                   linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:52px 52px;
+  mask-image:radial-gradient(ellipse 78% 62% at 50% 0%,#000 12%,transparent 74%);
+  -webkit-mask-image:radial-gradient(ellipse 78% 62% at 50% 0%,#000 12%,transparent 74%);
+}
+.bg::after{
+  content:"";position:absolute;left:50%;top:-46%;width:120%;height:80%;
+  transform:translateX(-50%);
+  background:radial-gradient(ellipse at 50% 50%,var(--glow),transparent 66%);
+  transition:background .22s ease;
+}
 
 /* ---------- 顶栏 ---------- */
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:22px}
-.brand{display:flex;align-items:center;gap:14px}
-.logo{
-  width:46px;height:46px;border-radius:13px;display:grid;place-items:center;flex:0 0 auto;
-  background:linear-gradient(135deg,#38BDF8,#6366F1);
-  box-shadow:0 8px 26px rgba(56,189,248,.35),inset 0 1px 0 rgba(255,255,255,.35);
+.topbar{
+  position:relative;z-index:3;flex:0 0 auto;
+  height:var(--top);padding:0 22px;
+  display:flex;align-items:center;justify-content:space-between;gap:20px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+  transition:background .22s ease,border-color .22s ease;
 }
-h1{margin:0;font-size:20px;font-weight:650;letter-spacing:.2px;display:flex;align-items:baseline;gap:9px}
-.ver{font:11px/1 var(--mono);color:var(--accent);border:1px solid var(--line2);border-radius:20px;padding:4px 9px;background:rgba(56,189,248,.07)}
-.ver.new{color:#FBBF24;border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.1);cursor:help}
-.sub{margin:2px 0 0;color:var(--muted);font-size:12.5px}
-.topright{display:flex;align-items:center;gap:18px}
-.pill{display:flex;align-items:center;gap:8px;padding:8px 15px;border-radius:22px;font-weight:600;font-size:13px;
-  border:1px solid var(--line2);background:rgba(52,211,153,.09);color:#A7F3D0;transition:.3s}
-.pill i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok);animation:blink 1.8s infinite}
-.pill.warn{background:rgba(251,191,36,.1);color:#FDE68A;border-color:rgba(251,191,36,.3)}
-.pill.warn i{background:var(--warn);box-shadow:0 0 10px var(--warn)}
-.pill.err{background:rgba(248,113,113,.1);color:#FCA5A5;border-color:rgba(248,113,113,.3)}
-.pill.err i{background:var(--err);box-shadow:0 0 10px var(--err);animation:none}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
-.meta{display:flex;gap:22px;text-align:right}
-.meta label{display:block;font-size:11px;color:var(--dim);letter-spacing:.4px}
-.meta b{font:600 14px/1.5 var(--mono);color:var(--txt)}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.logo{
+  width:38px;height:38px;border-radius:11px;flex:0 0 auto;
+  display:grid;place-items:center;
+  background:linear-gradient(150deg,#5EB0E0,#2670A0);
+  box-shadow:0 4px 12px var(--glow);
+}
+.logo svg{display:block}
+.brand h1{
+  margin:0;font-size:15.5px;font-weight:600;letter-spacing:-.1px;
+  display:flex;align-items:center;gap:8px;white-space:nowrap;
+}
+.ver{
+  font:500 11px/1 var(--mono);font-variant-numeric:tabular-nums;
+  color:var(--accent);background:var(--accent-soft);
+  border:1px solid var(--accent-line);border-radius:999px;padding:3px 8px;
+  cursor:default;transition:background .2s,border-color .2s;
+}
+.ver.new{color:var(--warn);background:var(--warn-soft);border-color:rgba(217,164,65,.36);cursor:pointer}
+.brand p{margin:1px 0 0;font-size:11.5px;color:var(--txt-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.topright{display:flex;align-items:center;gap:20px;flex:0 0 auto}
+.pill{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:6px 12px;border-radius:999px;
+  font-size:12px;font-weight:600;
+  color:var(--ok);background:var(--ok-soft);
+  border:1px solid rgba(18,133,92,.24);
+  transition:color .2s,background .2s,border-color .2s;
+}
+:root[data-theme="dark"] .pill{border-color:rgba(63,185,138,.26)}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 7px currentColor;animation:breathe 2.2s ease-in-out infinite}
+.pill.warn{color:var(--warn);background:var(--warn-soft);border-color:rgba(217,164,65,.3)}
+.pill.err{color:var(--err);background:var(--err-soft);border-color:rgba(220,107,107,.3)}
+.pill.err .dot{animation:none}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.3}}
+
+.meta{display:flex;gap:20px}
+.meta div{text-align:right;min-width:64px}
+.meta label{display:block;font-size:10px;letter-spacing:.5px;color:var(--txt-3);text-transform:uppercase}
+.meta b{
+  font:600 12.5px/1.5 var(--mono);font-variant-numeric:tabular-nums;
+  color:var(--txt-2);white-space:nowrap;
+}
+
+/* 主题切换：三段式，比一个太阳月亮按钮更能说明「跟随系统」这档 */
+.seg{
+  display:inline-flex;padding:2px;gap:2px;
+  background:var(--sunken);border:1px solid var(--line);border-radius:9px;
+  transition:background .22s,border-color .22s;
+}
+.seg button{
+  width:28px;height:24px;border:0;border-radius:6px;background:transparent;
+  color:var(--txt-3);cursor:pointer;display:grid;place-items:center;
+  transition:color .18s,background .18s;
+}
+.seg button:hover{color:var(--txt)}
+.seg button[aria-pressed="true"]{
+  background:var(--seg-on);color:var(--accent);
+  box-shadow:0 1px 2px rgba(0,0,0,.16);
+}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+/* ---------- 内容区 ---------- */
+.scroll{
+  position:relative;z-index:2;flex:1 1 auto;overflow-y:auto;overflow-x:hidden;
+  scrollbar-color:var(--scroll) transparent;
+}
+.scroll::-webkit-scrollbar{width:10px}
+.scroll::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:99px;border:3px solid transparent;background-clip:content-box}
+.scroll::-webkit-scrollbar-thumb:hover{background:var(--scroll-hover);background-clip:content-box}
+.scroll::-webkit-scrollbar-track{background:transparent}
+
+.wrap{max-width:1180px;margin:0 auto;padding:20px 22px 24px;display:flex;flex-direction:column;gap:14px}
 
 /* ---------- 卡片 ---------- */
 .card{
-  position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  box-shadow:0 10px 34px rgba(0,0,0,.36),inset 0 1px 0 rgba(255,255,255,.045);
+  background:var(--elev);border:1px solid var(--line);border-radius:var(--r-lg);
+  box-shadow:var(--shadow);
+  transition:background .22s ease,border-color .22s ease,box-shadow .22s ease;
 }
-.card::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;border-radius:var(--r) var(--r) 0 0;
-  background:linear-gradient(90deg,transparent,rgba(56,189,248,.55),transparent)}
-.card h2{margin:0 0 14px;font-size:13px;font-weight:600;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:10px}
-.hint{font:11px/1 var(--mono);color:var(--dim);text-transform:none;letter-spacing:0;border-left:1px solid var(--line2);padding-left:10px}
-
-/* ---------- 信号流 ---------- */
-.flow{display:flex;align-items:center;gap:0;padding:26px 24px;margin-bottom:16px}
-.node{
-  flex:0 0 244px;padding:16px 18px;border-radius:14px;border:1px solid var(--line);
-  background:linear-gradient(180deg,rgba(23,33,50,.9),rgba(14,21,33,.9));transition:.35s;position:relative;overflow:hidden;
+.card > header{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 18px 0;
 }
-.node::after{content:"";position:absolute;inset:0;border-radius:14px;opacity:0;transition:.4s;
-  box-shadow:0 0 0 1px var(--accent),0 0 26px rgba(56,189,248,.35) inset}
-.node.flash::after{opacity:1}
-.node-head{display:flex;align-items:center;gap:8px;font-size:11.5px;letter-spacing:.6px;color:var(--muted);text-transform:uppercase}
-.node-head .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 9px var(--accent)}
-.node.capture .node-head .dot{background:var(--ok);box-shadow:0 0 9px var(--ok)}
-.node-name{margin:9px 0 7px;font-size:16px;font-weight:600;line-height:1.35;word-break:break-word;min-height:44px}
-.node-vid{font:12px/1 var(--mono);color:var(--accent);background:rgba(56,189,248,.09);
-  border:1px solid var(--line2);border-radius:7px;padding:5px 9px;display:inline-block}
-.node.capture .node-vid{color:var(--ok);background:rgba(52,211,153,.09);border-color:rgba(52,211,153,.28)}
+.card h2{
+  margin:0;font-size:11px;font-weight:600;letter-spacing:.7px;
+  color:var(--txt-3);text-transform:uppercase;
+  display:flex;align-items:baseline;gap:9px;
+}
+.card h2 span{font:400 11px/1 var(--sans);letter-spacing:0;text-transform:none;color:var(--txt-3);opacity:.85}
 
-.link{position:relative;flex:1;min-width:34px;height:2px;margin:0 4px;
-  background:linear-gradient(90deg,rgba(56,189,248,.12),rgba(56,189,248,.6),rgba(56,189,248,.12))}
-.link::after{content:"";position:absolute;top:-3.5px;left:0;width:9px;height:9px;border-radius:50%;
-  background:var(--accent2);box-shadow:0 0 14px 2px var(--accent2);animation:flow 2.4s linear infinite}
-.link.rev::after{animation-direction:reverse}
-@keyframes flow{0%{left:-4%;opacity:0}12%{opacity:1}88%{opacity:1}100%{left:100%;opacity:0}}
+/* ---------- 两个小卡片：当前播放 / 当前麦克风 ---------- */
+.pair{padding:16px 18px 12px}
+.pair-row{display:grid;grid-template-columns:1fr 32px 1fr;align-items:center;gap:10px}
+.mini{
+  display:flex;align-items:center;gap:10px;min-width:0;
+  padding:10px 13px;border-radius:var(--r-md);
+  border:1px solid var(--line);background:var(--sunken);
+  transition:border-color .3s,box-shadow .3s,background .22s;
+}
+.mini.flash{border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+.mini i{
+  width:6px;height:6px;border-radius:50%;flex:0 0 auto;
+  background:var(--accent);box-shadow:0 0 7px var(--accent);
+}
+.mini.mic i{background:var(--ok);box-shadow:0 0 7px var(--ok)}
+.mini-tag{
+  flex:0 0 auto;font-size:10px;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--txt-3);
+}
+.mini-name{
+  flex:1 1 auto;min-width:0;font-size:13.5px;font-weight:600;color:var(--txt);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.mini-vid{
+  flex:0 0 auto;font:500 10.5px/1 var(--mono);
+  color:var(--accent);background:var(--accent-soft);
+  border:1px solid var(--accent-line);border-radius:var(--r-sm);padding:4px 7px;
+}
+.mini.mic .mini-vid{color:var(--ok);background:var(--ok-soft);border-color:rgba(18,133,92,.26)}
+:root[data-theme="dark"] .mini.mic .mini-vid{border-color:rgba(63,185,138,.28)}
+.pair-arrow{display:grid;place-items:center;color:var(--txt-3)}
 
-.engine{flex:0 0 214px;position:relative;display:grid;place-items:center;padding:6px}
-.ring{position:absolute;width:132px;height:132px;border-radius:50%;border:1px solid rgba(56,189,248,.35);animation:pulse 3s ease-out infinite}
-.ring.r2{animation-delay:1.5s}
-@keyframes pulse{0%{transform:scale(.72);opacity:.85}100%{transform:scale(1.42);opacity:0}}
-.core{position:relative;width:158px;height:158px;border-radius:50%;display:grid;place-content:center;text-align:center;gap:6px;
-  background:radial-gradient(circle at 50% 30%,rgba(56,189,248,.2),rgba(10,16,26,.96) 70%);
-  border:1px solid var(--line2);box-shadow:0 0 42px rgba(56,189,248,.22),inset 0 0 30px rgba(56,189,248,.09)}
-.engine-title{font-size:13px;font-weight:650;background:linear-gradient(90deg,#38BDF8,#22D3EE,#818CF8);
-  -webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:.5px}
-.engine-sub{font:10.5px/1.4 var(--mono);color:var(--muted);max-width:132px;word-break:break-word}
-.badge{font:10px/1 var(--mono);color:#FDE68A;border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.1);
-  border-radius:20px;padding:3px 8px;justify-self:center;display:none}
+.pair-foot{
+  display:flex;align-items:center;gap:9px;
+  margin-top:12px;padding-top:11px;border-top:1px solid var(--line-soft);
+  font-size:12px;color:var(--txt-2);min-height:20px;
+}
+.pair-foot .lbl{color:var(--txt-3);font-size:10.5px;letter-spacing:.5px;text-transform:uppercase}
+.pair-foot b{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--txt-2)}
+.badge{
+  display:none;margin-left:auto;
+  font:500 9.5px/1 var(--mono);color:var(--warn);
+  border:1px solid rgba(217,164,65,.34);background:var(--warn-soft);
+  border-radius:999px;padding:3px 7px;
+}
 .badge.on{display:inline-block}
-.core.flash{animation:coreFlash .9s ease-out}
-@keyframes coreFlash{0%{box-shadow:0 0 0 0 rgba(34,211,238,.65),0 0 42px rgba(56,189,248,.22)}
-  100%{box-shadow:0 0 0 34px rgba(34,211,238,0),0 0 42px rgba(56,189,248,.22)}}
 
-/* ---------- 指标 ---------- */
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
-.stat{padding:16px 18px}
-.stat label{display:block;font-size:11.5px;color:var(--dim);letter-spacing:.5px;margin-bottom:7px}
-.stat b{font:600 24px/1 var(--mono);color:var(--txt)}
-.stat b.sm{font-size:15px;color:var(--accent)}
+/* ---------- 指标条 ---------- */
+.stats{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  background:var(--elev);border:1px solid var(--line);border-radius:var(--r-lg);
+  box-shadow:var(--shadow);overflow:hidden;
+  transition:background .22s,border-color .22s;
+}
+.stat{padding:15px 18px;border-left:1px solid var(--line-soft)}
+.stat:first-child{border-left:0}
+.stat label{display:block;font-size:10.5px;letter-spacing:.5px;color:var(--txt-3);text-transform:uppercase;margin-bottom:6px}
+.stat b{
+  font:600 21px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--txt);
+  display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.stat b.sm{font-size:13px;color:var(--accent)}
 
-/* ---------- 两列 ---------- */
-.cols{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-bottom:16px}
-.cols>section{padding:20px}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;font-weight:500;font-size:11px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;padding:0 10px 9px}
-td{padding:11px 10px;border-top:1px solid rgba(56,189,248,.1)}
-tr:hover td{background:rgba(56,189,248,.045)}
-td.mono,code{font-family:var(--mono);font-size:12.5px;color:var(--accent)}
-.arrow{color:var(--dim);padding:0 6px}
-.note{color:var(--muted);font-size:12.5px}
-.fbrow{margin-top:14px;padding:12px 14px;border-radius:11px;border:1px dashed rgba(251,191,36,.32);
-  background:rgba(251,191,36,.055);font-size:12.5px;color:#FDE68A;display:flex;align-items:center;gap:10px}
-.fbrow code{color:#FCD34D}
+/* ---------- 拖拽配对板 ---------- */
+.board{display:grid;grid-template-columns:1fr 30px 1fr;gap:10px;padding:14px 18px 4px}
+.board-col{min-width:0}
+.board-col h3{
+  margin:0 0 8px;font-size:10px;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--txt-3);font-weight:500;display:flex;align-items:center;gap:7px;
+}
+.board-col h3 em{
+  font-style:normal;font-size:9.5px;letter-spacing:0;text-transform:none;
+  color:var(--accent);background:var(--accent-soft);
+  border:1px solid var(--accent-line);border-radius:999px;padding:2px 6px;
+}
+.board-arrow{display:grid;place-items:center;color:var(--txt-3);padding-top:22px}
 
-.dev-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.dev-cols h3{margin:0 0 10px;font-size:11.5px;color:var(--dim);letter-spacing:.5px;font-weight:500;text-transform:uppercase}
-ul.dev{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-ul.dev li{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:10px;background:rgba(255,255,255,.022);
-  border:1px solid rgba(56,189,248,.08);font-size:12.5px;transition:.25s;cursor:pointer}
-ul.dev li:hover{background:rgba(56,189,248,.09);border-color:var(--line2);transform:translateX(2px)}
-ul.dev li.on{background:rgba(56,189,248,.1);border-color:var(--line2);cursor:default}
-ul.dev li.on:hover{transform:none}
-ul.dev li .b{width:6px;height:6px;border-radius:50%;background:#31465e;flex:0 0 auto}
-ul.dev li.on .b{background:var(--accent);box-shadow:0 0 9px var(--accent)}
-ul.dev li .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-ul.dev li .vd{font:11px/1 var(--mono);color:var(--dim)}
+ul.picks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.picks li{
+  display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:var(--r-md);
+  border:1px solid var(--line-soft);background:var(--sunken);
+  font-size:12px;min-width:0;
+  transition:background .16s,border-color .16s,box-shadow .16s,opacity .16s;
+}
+ul.picks li.pb{cursor:grab}
+ul.picks li.pb:hover{background:var(--accent-soft);border-color:var(--accent-line)}
+ul.picks li.pb.sel{background:var(--accent-soft);border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-soft)}
+ul.picks li.dragging{opacity:.4;cursor:grabbing}
+ul.picks li.drop{background:var(--accent-soft);border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+ul.picks li .b{width:5px;height:5px;border-radius:50%;background:var(--txt-3);opacity:.45;flex:0 0 auto}
+ul.picks li.pb.sel .b{background:var(--accent);opacity:1;box-shadow:0 0 7px var(--accent)}
+ul.picks li .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ul.picks li .vd{font:500 10.5px/1 var(--mono);color:var(--txt-3);flex:0 0 auto}
+ul.picks li.na{cursor:default;opacity:.65;font-size:12px}
+ul.picks li .pin{font:500 10px/1 var(--mono);color:var(--accent);flex:0 0 auto}
+
+/* ---------- 规则列表 ---------- */
+.rulelist{padding:14px 18px 6px}
+.rulelist h3{
+  margin:0 0 9px;font-size:10px;letter-spacing:.6px;text-transform:uppercase;
+  color:var(--txt-3);font-weight:500;display:flex;align-items:center;gap:7px;
+}
+.rulelist h3 b{font:600 11px/1 var(--mono);color:var(--accent)}
+.rrow{
+  display:grid;grid-template-columns:1.1fr 18px 1.1fr 1.1fr 26px;
+  align-items:center;gap:8px;
+  padding:8px 10px;border-radius:var(--r-md);
+  border:1px solid var(--line-soft);background:var(--sunken);
+  margin-bottom:6px;
+  transition:background .16s,border-color .16s;
+}
+.rrow:hover{background:var(--accent-soft);border-color:var(--accent-line)}
+.rfrom,.rto{
+  font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.rfrom{color:var(--txt)}
+.rto{color:var(--accent);font-weight:600}
+.rar{color:var(--txt-3);text-align:center;font-size:11px}
+.rnote{
+  width:100%;min-width:0;font:12px/1.4 var(--sans);
+  color:var(--txt);background:var(--elev);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:5px 8px;outline:none;
+  transition:border-color .16s,box-shadow .16s;
+}
+.rnote::placeholder{color:var(--txt-3)}
+.rnote:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.rdel{
+  width:24px;height:24px;border-radius:var(--r-sm);border:1px solid transparent;
+  background:transparent;color:var(--txt-3);cursor:pointer;
+  font:14px/1 var(--sans);display:grid;place-items:center;
+  transition:color .16s,background .16s,border-color .16s;
+}
+.rdel:hover{color:var(--err);background:var(--err-soft);border-color:rgba(220,107,107,.3)}
+
+.empty{
+  display:flex;flex-direction:column;align-items:center;gap:7px;
+  padding:26px 16px 30px;color:var(--txt-3);font-size:12.5px;text-align:center;
+}
+.empty svg{opacity:.5}
+
+.fbrow{
+  display:flex;align-items:center;gap:9px;
+  margin:8px 18px 16px;padding:10px 13px;border-radius:var(--r-md);
+  border:1px dashed rgba(217,164,65,.34);background:var(--warn-soft);
+  font-size:12px;color:var(--warn);
+  transition:border-color .16s,box-shadow .16s;
+}
+.fbrow.drop{border-style:solid;border-color:var(--warn);box-shadow:0 0 0 3px rgba(217,164,65,.16)}
+.fbrow code{color:inherit;font-weight:600;font-family:var(--mono);font-size:11.5px}
+.fbrow .fbclear{
+  margin-left:auto;border:1px solid rgba(217,164,65,.4);background:transparent;
+  color:inherit;font:500 11px/1 var(--sans);padding:4px 9px;border-radius:999px;cursor:pointer;
+  transition:background .16s;
+}
+.fbrow .fbclear:hover{background:rgba(217,164,65,.16)}
+.fbrow .fbclear.hide{display:none}
+
+/* ---------- 设备清单 ---------- */
+.dev-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:12px 18px 16px}
+.dev-cols h3{margin:0 0 8px;font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--txt-3);font-weight:500}
+ul.dev{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.dev li{
+  display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-md);
+  border:1px solid var(--line-soft);background:var(--sunken);
+  font-size:12px;cursor:pointer;min-width:0;
+  transition:background .16s,border-color .16s,transform .16s;
+}
+ul.dev li:hover{background:var(--accent-soft);border-color:var(--accent-line);transform:translateX(2px)}
+ul.dev li.on{background:var(--accent-soft);border-color:var(--accent-line);cursor:default;transform:none}
+ul.dev li .b{width:5px;height:5px;border-radius:50%;background:var(--txt-3);opacity:.45;flex:0 0 auto;transition:background .16s,opacity .16s}
+ul.dev li.on .b{background:var(--accent);opacity:1;box-shadow:0 0 7px var(--accent)}
+ul.dev li .nm{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ul.dev li .vd{font:500 10.5px/1 var(--mono);color:var(--txt-3);flex:0 0 auto}
 ul.dev li.on .vd{color:var(--accent)}
+ul.dev li.na{cursor:default;opacity:.65}
+ul.dev li.na:hover{transform:none;background:var(--sunken);border-color:var(--line-soft)}
 
-/* ---------- 日志 ---------- */
-.logs{padding:20px;margin-bottom:16px}
-.logs-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.logs-head h2{margin:0}
-.logbox{height:250px;overflow:auto;border-radius:12px;background:rgba(6,10,17,.72);border:1px solid rgba(56,189,248,.1);
-  padding:12px 14px;font:12.5px/1.75 var(--mono)}
+/* ---------- 开关 ---------- */
+.chk{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--txt-2);cursor:pointer;user-select:none;white-space:nowrap}
+.chk:hover{color:var(--txt)}
+input[type=checkbox]{
+  appearance:none;-webkit-appearance:none;margin:0;
+  width:32px;height:18px;border-radius:999px;position:relative;cursor:pointer;
+  background:var(--sunken);border:1px solid var(--line);outline:none;
+  transition:background .2s,border-color .2s;
+}
+input[type=checkbox]::after{
+  content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;
+  background:var(--txt-3);transition:transform .2s,background .2s;
+}
+input[type=checkbox]:checked{background:var(--accent);border-color:transparent}
+input[type=checkbox]:checked::after{transform:translateX(14px);background:#fff}
+input[type=checkbox]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- 底栏 ---------- */
+.actionbar{
+  position:relative;z-index:3;flex:0 0 auto;
+  min-height:60px;padding:9px 22px;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  border-top:1px solid var(--line);background:var(--bg);
+  transition:background .22s,border-color .22s;
+}
+.btn{
+  border:1px solid var(--line);background:var(--elev);color:var(--txt);
+  font:600 12.5px/1 var(--sans);padding:9px 16px;border-radius:var(--r-md);
+  cursor:pointer;white-space:nowrap;
+  transition:background .18s,border-color .18s,transform .12s,color .18s,box-shadow .18s;
+}
+.btn:hover{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:disabled{opacity:.55;cursor:default;transform:none;background:var(--elev);border-color:var(--line);color:var(--txt-3)}
+.btn.primary{
+  background:var(--accent);border-color:transparent;color:var(--accent-ink);
+  box-shadow:0 3px 10px var(--glow);
+}
+.btn.primary:hover{filter:brightness(1.07);color:var(--accent-ink);background:var(--accent)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--txt-3)}
+.btn.ghost:hover{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+.spacer{flex:1 1 auto}
+.path{
+  font:11px/1 var(--mono);color:var(--txt-3);max-width:280px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;
+}
+.updmsg{font-size:11.5px;color:var(--txt-3);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.updmsg.warn{color:var(--warn)}
+.updmsg.err{color:var(--err)}
+
+/* ---------- 断线提示条 ----------
+   藏在视口上方（top:0 再整体上移自身高度），露出来时才落到顶栏下沿。 */
+.banner{
+  position:absolute;left:0;right:0;top:0;z-index:4;
+  padding:8px 22px;font-size:12px;font-weight:500;
+  color:var(--err);background:var(--banner-bg);
+  border-bottom:1px solid rgba(220,107,107,.24);
+  transform:translateY(-100%);
+  transition:transform .26s ease;
+}
+.banner.on{transform:translateY(var(--top))}
+
+/* ---------- 日志弹窗 ---------- */
+.modal{
+  position:fixed;inset:0;z-index:20;
+  display:flex;align-items:center;justify-content:center;padding:40px;
+  background:var(--veil);
+  opacity:0;visibility:hidden;
+  transition:opacity .2s ease,visibility .2s ease;
+}
+.modal.on{opacity:1;visibility:visible}
+.modal-card{
+  width:min(880px,100%);height:min(560px,100%);
+  display:flex;flex-direction:column;
+  background:var(--elev);border:1px solid var(--line);border-radius:var(--r-lg);
+  box-shadow:0 24px 64px rgba(0,0,0,.36);
+  transform:translateY(10px) scale(.99);
+  transition:transform .22s cubic-bezier(.2,.8,.3,1);
+}
+.modal.on .modal-card{transform:none}
+.modal-card > header{
+  display:flex;align-items:center;gap:14px;
+  padding:14px 16px;border-bottom:1px solid var(--line);
+}
+.modal-card h2{margin:0;font-size:13px;font-weight:600;letter-spacing:.2px;color:var(--txt)}
+.modal-card h2 em{font-style:normal;font-size:11px;color:var(--txt-3);margin-left:7px;font-weight:400}
+.modal-card .x{
+  width:28px;height:28px;border:1px solid transparent;border-radius:var(--r-sm);
+  background:transparent;color:var(--txt-3);cursor:pointer;
+  font:16px/1 var(--sans);display:grid;place-items:center;
+  transition:color .16s,background .16s;
+}
+.modal-card .x:hover{color:var(--txt);background:var(--sunken)}
+.modal-card > footer{
+  display:flex;align-items:center;gap:10px;
+  padding:12px 16px;border-top:1px solid var(--line);
+}
+.logbox{
+  flex:1 1 auto;overflow:auto;margin:0;
+  background:var(--sunken);
+  padding:12px 14px;font:11.5px/1.75 var(--mono);
+  scrollbar-color:var(--scroll) transparent;
+}
 .logbox::-webkit-scrollbar{width:9px}
-.logbox::-webkit-scrollbar-thumb{background:rgba(56,189,248,.22);border-radius:9px}
+.logbox::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:99px;border:3px solid transparent;background-clip:content-box}
 .logbox::-webkit-scrollbar-track{background:transparent}
-.lg{display:flex;gap:12px;white-space:pre-wrap;word-break:break-word}
-.lg .t{color:var(--dim);flex:0 0 auto}
-.lg .x{flex:1}
-.lg.info .x{color:#B9C7D9}
-.lg.ok .x{color:#6EE7B7}
-.lg.warn .x{color:#FCD34D}
-.lg.err .x{color:#FCA5A5}
-.chk{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
-input[type=checkbox]{appearance:none;-webkit-appearance:none;width:36px;height:20px;border-radius:20px;
-  background:rgba(255,255,255,.12);position:relative;cursor:pointer;transition:.25s;outline:none;border:1px solid var(--line)}
-input[type=checkbox]::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
-  background:#93A6BC;transition:.25s}
-input[type=checkbox]:checked{background:linear-gradient(90deg,#0EA5E9,#6366F1);border-color:transparent}
-input[type=checkbox]:checked::after{left:18px;background:#fff}
+.lg{display:flex;gap:11px}
+.lg .t{color:var(--txt-3);flex:0 0 auto;font-variant-numeric:tabular-nums}
+.lg .x{flex:1;white-space:pre-wrap;word-break:break-word;color:var(--txt-2)}
+.lg.ok .x{color:var(--ok)}
+.lg.warn .x{color:var(--warn)}
+.lg.err .x{color:var(--err)}
 
-/* ---------- 底部操作栏 ---------- */
-.actionbar{position:fixed;left:0;right:0;bottom:0;z-index:5;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-  padding:13px 24px;background:linear-gradient(180deg,rgba(7,11,18,.6),rgba(7,11,18,.96));
-  border-top:1px solid var(--line);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-.btn{border:1px solid var(--line2);background:rgba(56,189,248,.08);color:var(--txt);font:600 13px/1 inherit;
-  padding:11px 20px;border-radius:11px;cursor:pointer;transition:.22s}
-.btn:hover{background:rgba(56,189,248,.16);transform:translateY(-1px)}
-.btn:active{transform:translateY(0)}
-.btn.primary{background:linear-gradient(135deg,#38BDF8,#6366F1);border-color:transparent;color:#06121f;
-  box-shadow:0 8px 22px rgba(56,189,248,.3)}
-.btn.primary:hover{filter:brightness(1.08)}
-.btn.ghost{background:transparent;border-color:var(--line);color:var(--muted)}
-.spacer{flex:1}
-.path{font:11px/1 var(--mono);color:var(--dim);max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.updmsg{font:11.5px/1.4 var(--muted);max-width:290px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.updmsg.warn{color:#FCD34D}
-.updmsg.err{color:#FCA5A5}
+/* ---------- 提示气泡 ---------- */
+.toast{
+  position:fixed;left:50%;bottom:78px;z-index:30;
+  transform:translate(-50%,12px);
+  padding:9px 16px;border-radius:999px;
+  background:var(--elev);border:1px solid var(--line);
+  box-shadow:0 10px 30px rgba(0,0,0,.22);
+  font-size:12.5px;color:var(--txt);white-space:nowrap;
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .2s ease,transform .2s ease,visibility .2s ease;
+}
+.toast.on{opacity:1;visibility:visible;transform:translate(-50%,0)}
+.toast.bad{color:var(--err);border-color:rgba(220,107,107,.34)}
 
-@media(max-width:900px){
-  .cols{grid-template-columns:1fr}
+/* 已保存的细微提示 */
+.saved{
+  font-size:11px;color:var(--ok);opacity:0;transition:opacity .3s ease;
+}
+.saved.on{opacity:1}
+
+@media (max-width:1000px){
   .stats{grid-template-columns:repeat(2,1fr)}
-  .flow{flex-direction:column;gap:16px}
-  .node{flex:1 1 auto;width:100%}
-  .link{width:2px;height:40px;min-width:2px;background:linear-gradient(180deg,rgba(56,189,248,.12),rgba(56,189,248,.6),rgba(56,189,248,.12))}
-  .link::after{animation:flowV 2.4s linear infinite}
-  @keyframes flowV{0%{top:-4%;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:100%;opacity:0}}
+  .stat:nth-child(3){border-left:0}
+  .stat:nth-child(n+3){border-top:1px solid var(--line-soft)}
+  .pair-row{grid-template-columns:1fr;}
+  .pair-arrow{transform:rotate(90deg);padding:2px 0}
+  .board{grid-template-columns:1fr}
+  .board-arrow{transform:rotate(90deg);padding:0}
   .dev-cols{grid-template-columns:1fr}
+  .rrow{grid-template-columns:1fr 16px 1fr 24px;row-gap:6px}
+  .rnote{grid-column:1 / -1}
+}
+@media (max-width:760px){
+  .topbar{height:auto;padding:12px 16px;flex-wrap:wrap}
+  .wrap{padding:16px}
+  .meta{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
 }
 </style>
 </head>
 <body>
-<div class="bg-grid"></div>
-<div class="glow g1"></div><div class="glow g2"></div>
+<div class="bg"></div>
 
-<div class="wrap">
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#06121f" stroke-width="2" stroke-linecap="round">
-          <rect x="9" y="2" width="6" height="11" rx="3" fill="#06121f" stroke="none"/>
-          <path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M8.5 21h7"/>
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#F2F8FF" stroke-width="2" stroke-linecap="round">
+        <rect x="9" y="2" width="6" height="11" rx="3" fill="#F2F8FF" stroke="none"/>
+        <path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M8.5 21h7"/>
+      </svg>
+    </div>
+    <div>
+      <h1>AutoMicSwitch <span class="ver" id="ver">v2.3.0</span></h1>
+      <p>默认播放设备变化 → 自动联动默认麦克风 · by 沐辉</p>
+    </div>
+  </div>
+
+  <div class="topright">
+    <div class="pill" id="statePill"><span class="dot"></span><span id="stateText">连接中</span></div>
+    <div class="meta">
+      <div><label>运行时长</label><b id="uptime">--:--</b></div>
+      <div><label>运行架构</label><b id="arch">--</b></div>
+    </div>
+    <div class="seg" id="themeSeg" role="group" aria-label="界面主题">
+      <button type="button" data-theme-set="auto" aria-pressed="false" title="跟随系统">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1.6" y="2.6" width="12.8" height="8.8" rx="1.6"/><path d="M5.6 14h4.8M8 11.4V14"/>
         </svg>
-      </div>
-      <div>
-        <h1>AutoMicSwitch <span class="ver" id="ver">v2.0.0</span></h1>
-        <p class="sub">默认播放设备变化 &rarr; 自动联动默认麦克风 &middot; by 沐辉</p>
-      </div>
+      </button>
+      <button type="button" data-theme-set="light" aria-pressed="false" title="浅色">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <circle cx="8" cy="8" r="3.1"/>
+          <path d="M8 1.3v1.5M8 13.2v1.5M1.3 8h1.5M13.2 8h1.5M3.3 3.3l1.1 1.1M11.6 11.6l1.1 1.1M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1"/>
+        </svg>
+      </button>
+      <button type="button" data-theme-set="dark" aria-pressed="false" title="深色">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/>
+        </svg>
+      </button>
     </div>
-    <div class="topright">
-      <div class="pill" id="statePill"><i></i><span id="stateText">连接中…</span></div>
-      <div class="meta">
-        <div><label>运行时长</label><b id="uptime">--:--</b></div>
-        <div><label>控制台端口</label><b id="port">----</b></div>
-      </div>
-    </div>
-  </header>
+  </div>
+</header>
 
-  <main>
-    <section class="card flow">
-      <div class="node render" id="nodeRender">
-        <div class="node-head"><span class="dot"></span>播放输出</div>
-        <div class="node-name" id="pbName">--</div>
-        <div class="node-vid" id="pbVid">--</div>
-      </div>
-      <div class="link" id="linkA"></div>
-      <div class="engine">
-        <div class="ring"></div><div class="ring r2"></div>
-        <div class="core" id="core">
-          <div class="engine-title">联动引擎</div>
-          <div class="engine-sub" id="matchText">等待首次切换…</div>
-          <div class="badge" id="fbBadge">兜底规则</div>
+<div class="banner" id="banner">界面与控制台断开连接，正在重试…</div>
+
+<main class="scroll">
+  <div class="wrap">
+
+    <section class="card pair">
+      <div class="pair-row">
+        <div class="mini" id="pbCard">
+          <i></i><span class="mini-tag">播放输出</span>
+          <span class="mini-name" id="pbName">—</span>
+          <span class="mini-vid" id="pbVid">—</span>
+        </div>
+        <div class="pair-arrow" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12h14M13 7l5 5-5 5"/>
+          </svg>
+        </div>
+        <div class="mini mic" id="micCard">
+          <i></i><span class="mini-tag">默认麦克风</span>
+          <span class="mini-name" id="micName">—</span>
+          <span class="mini-vid" id="micVid">—</span>
         </div>
       </div>
-      <div class="link rev" id="linkB"></div>
-      <div class="node capture" id="nodeMic">
-        <div class="node-head"><span class="dot"></span>默认麦克风</div>
-        <div class="node-name" id="micName">--</div>
-        <div class="node-vid" id="micVid">--</div>
+      <div class="pair-foot">
+        <span class="lbl">当前命中</span>
+        <b id="matchText">等待首次切换…</b>
+        <span class="badge" id="fbBadge">兜底规则</span>
       </div>
     </section>
 
     <section class="stats">
-      <div class="card stat"><label>联动切换次数</label><b id="switches">0</b></div>
-      <div class="card stat"><label>被改回重试</label><b id="retries">0</b></div>
-      <div class="card stat"><label>规则条数</label><b id="ruleCount">0</b></div>
-      <div class="card stat"><label>兜底麦克风</label><b class="sm" id="fallbackKey">--</b></div>
+      <div class="stat"><label>联动切换次数</label><b id="switches">0</b></div>
+      <div class="stat"><label>被改回重试</label><b id="retries">0</b></div>
+      <div class="stat"><label>规则条数</label><b id="ruleCount">0</b></div>
+      <div class="stat"><label>兜底麦克风</label><b class="sm" id="fallbackKey">—</b></div>
     </section>
 
-    <div class="cols">
-      <section class="card rules">
-        <h2>联动规则 <span class="hint">播放设备 &rarr; 目标麦克风</span></h2>
-        <table>
-          <thead><tr><th>播放设备 VID</th><th></th><th>目标麦克风 VID</th><th>说明</th></tr></thead>
-          <tbody id="ruleBody"></tbody>
-        </table>
-        <div class="fbrow">兜底规则：未匹配任何规则时，麦克风统一切到 <code id="fbKey">--</code></div>
-      </section>
+    <section class="card">
+      <header>
+        <h2>联动规则 <span>拖左侧设备到右侧麦克风上松手即成规则，也可以先点左边再点右边</span></h2>
+        <span class="saved" id="saveHint">已保存</span>
+      </header>
 
-      <section class="card devices">
-        <h2>设备清单 <span class="hint">点一下切默认</span></h2>
-        <div class="dev-cols">
-          <div><h3>播放设备</h3><ul class="dev" id="pbList"></ul></div>
-          <div><h3>录音设备</h3><ul class="dev" id="capList"></ul></div>
+      <div class="board">
+        <div class="board-col">
+          <h3>播放设备 <em>按住拖走</em></h3>
+          <ul class="picks" id="pairPb"></ul>
         </div>
-      </section>
-    </div>
-
-    <section class="card logs">
-      <div class="logs-head">
-        <h2>实时日志 <span class="hint">最近 80 条</span></h2>
-        <label class="chk"><input type="checkbox" id="autoScroll" checked> 自动滚动</label>
+        <div class="board-arrow" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 12h14M13 7l5 5-5 5"/>
+          </svg>
+        </div>
+        <div class="board-col">
+          <h3>录音设备 <em>松手落点</em></h3>
+          <ul class="picks" id="pairCap"></ul>
+        </div>
       </div>
-      <div class="logbox" id="logbox"><div class="lg info"><span class="t">--:--:--</span><span class="x">正在连接控制台…</span></div></div>
+
+      <div class="rulelist">
+        <h3>已建立 <b id="ruleCount2">0</b> 条规则</h3>
+        <div id="ruleRows"></div>
+      </div>
+
+      <div class="fbrow" id="fbRow">
+        兜底规则：未命中任何规则时统一切到 <code id="fbKey">—</code>
+        <button type="button" class="fbclear hide" id="fbClear">清除</button>
+      </div>
     </section>
-  </main>
-</div>
+
+    <section class="card">
+      <header><h2>设备清单 <span>点一下设为系统默认</span></h2></header>
+      <div class="dev-cols">
+        <div><h3>播放设备</h3><ul class="dev" id="pbList"></ul></div>
+        <div><h3>录音设备</h3><ul class="dev" id="capList"></ul></div>
+      </div>
+    </section>
+
+  </div>
+</main>
 
 <footer class="actionbar">
   <button class="btn primary" id="btnToggle">暂停联动</button>
@@ -297,210 +678,648 @@ input[type=checkbox]:checked::after{left:18px;background:#fff}
   <span class="spacer"></span>
   <span class="path" id="exePath"></span>
   <button class="btn ghost" id="btnDir">打开目录</button>
-  <button class="btn ghost" id="btnLog">打开日志</button>
+  <button class="btn" id="btnLog">查看日志</button>
 </footer>
+
+<div class="modal" id="logModal" role="dialog" aria-modal="true" aria-label="实时日志">
+  <div class="modal-card">
+    <header>
+      <h2>实时日志 <em id="logCount">最近 80 条</em></h2>
+      <span class="spacer"></span>
+      <label class="chk"><input type="checkbox" id="autoScroll" checked> 自动滚动</label>
+      <button type="button" class="x" id="logX" title="关闭">✕</button>
+    </header>
+    <div class="logbox" id="logbox"></div>
+    <footer>
+      <button class="btn ghost" id="btnOpenLogFile">打开日志文件</button>
+      <span class="spacer"></span>
+      <button class="btn" id="logClose">关闭</button>
+    </footer>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
 
 <script>
 (function(){
-  var $ = function(id){ return document.getElementById(id); };
-  var lastTick = -1, lastLogKey = '', booted = false, guard = false, connected = true, lastUpdate = {};
+  "use strict";
 
+  var $ = function(id){ return document.getElementById(id); };
+  var root = document.documentElement;
+  var bridge = window.chrome && window.chrome.webview;
+
+  var seq = 0;
+  var pending = {};
+  var lastTick = -1;
+  var booted = false;
+  var guard = false;
+  var connected = true;
+  var lastUpdate = {};
+  var lastTheme = "";
+  var pollTimer = null;
+  var logOpen = false;
+  var lastLogKey = "";
+
+  // 规则以本地这份为准，服务器那份只是对表
+  var state = { rules: [], pb: [], cap: [], fallback: "" };
+  var lastServerSig = "";
+  var localSig = "";
+  var rulesRendered = false;
+  var selKey = null;
+  var drag = null;
+  var noteTimer = null;
+
+  /* ---------- 与 C# 的通道 ----------
+     fetch 在这套窗口里没有后端，改成 postMessage 一问一答：
+     请求 {i,p,a,v,dv,tx}，回应 {i,d:<状态>}，另外还有 {e:...} 的主动推送。 */
+  function call(path, payload){
+    return new Promise(function(resolve){
+      if(!bridge){ resolve(null); return; }
+      var id = String(++seq);
+      pending[id] = resolve;
+      var msg = {i:id, p:path};
+      if(payload){
+        for(var k in payload){
+          if(Object.prototype.hasOwnProperty.call(payload, k)) msg[k] = payload[k];
+        }
+      }
+      bridge.postMessage(JSON.stringify(msg));
+    });
+  }
+
+  if(bridge){
+    bridge.addEventListener("message", function(ev){
+      var m;
+      try { m = JSON.parse(ev.data); } catch(e){ return; }
+      if(!m) return;
+
+      if(m.e){
+        if(m.e === "wake"){ startPolling(); tick(); }
+        else if(m.e === "theme"){ tick(); }
+        return;
+      }
+      var fn = pending[m.i];
+      if(fn){ delete pending[m.i]; fn(m.d); }
+    });
+  }
+
+  /* ---------- 小工具 ---------- */
   function fmtUptime(s){
-    s = Math.max(0, parseInt(s,10) || 0);
-    var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), x = s%60;
-    var p = function(n){ return (n<10?'0':'')+n; };
-    return (h>0 ? h+':' : '') + p(m) + ':' + p(x);
+    s = Math.max(0, parseInt(s, 10) || 0);
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    var p = function(n){ return (n < 10 ? "0" : "") + n; };
+    return (h > 0 ? h + ":" : "") + p(m) + ":" + p(x);
   }
   function esc(t){
-    return String(t==null?'':t).replace(/[&<>"]/g, function(c){
-      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    return String(t == null ? "" : t).replace(/[&<>"]/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];
     });
   }
   function flash(el){
     if(!el) return;
-    el.classList.remove('flash');
+    el.classList.remove("flash");
     void el.offsetWidth;
-    el.classList.add('flash');
-    setTimeout(function(){ el.classList.remove('flash'); }, 900);
+    el.classList.add("flash");
+    setTimeout(function(){ el.classList.remove("flash"); }, 800);
+  }
+  function toast(text, bad){
+    var t = $("toast");
+    t.textContent = text;
+    t.className = "toast on" + (bad ? " bad" : "");
+    clearTimeout(t._h);
+    t._h = setTimeout(function(){ t.className = "toast" + (bad ? " bad" : ""); }, 2400);
   }
 
+  /* ---------- 主题 ----------
+     C# 已经把「跟随系统」解析成具体值了，这里只负责照着画，
+     并让分段控件显示用户选的档位（auto / light / dark）。 */
+  function applyTheme(pref, dark){
+    var want = dark ? "dark" : "light";
+    if(root.getAttribute("data-theme") !== want) root.setAttribute("data-theme", want);
+    if(lastTheme === pref) return;
+    lastTheme = pref;
+
+    var btns = $("themeSeg").getElementsByTagName("button");
+    for(var i = 0; i < btns.length; i++){
+      var on = btns[i].getAttribute("data-theme-set") === pref;
+      btns[i].setAttribute("aria-pressed", on ? "true" : "false");
+    }
+  }
+
+  $("themeSeg").addEventListener("click", function(e){
+    var seg = $("themeSeg"), t = e.target;
+    while(t && t !== seg && t.tagName !== "BUTTON") t = t.parentNode;
+    if(!t || t === seg) return;
+    var pref = t.getAttribute("data-theme-set");
+    if(!pref || pref === lastTheme) return;
+    // 先本地切过去，手感立刻到位；状态回来后再校准
+    root.setAttribute("data-theme", pref === "dark" ? "dark"
+      : pref === "light" ? "light"
+      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+    act("settheme", undefined, undefined, pref);
+  });
+
+  /* ---------- 设备键 ----------
+     规则的键是对设备 InstanceId 做包含匹配。VID 在换口、改名、重装驱动后都不变，
+     所以优先用 VID；少数虚拟设备没有 VID，就退回整段端点 ID，同样能匹配上。 */
+  function devKey(d){
+    var vid = d.vid && d.vid !== "-" ? d.vid : "";
+    return vid || d.id || "";
+  }
+  function allDevices(){
+    return state.pb.concat(state.cap);
+  }
+  function nameOf(key){
+    if(!key) return "—";
+    var list = allDevices();
+    for(var i = 0; i < list.length; i++){
+      var d = list[i];
+      var k = devKey(d);
+      if(k === key) return d.name;
+    }
+    for(var j = 0; j < list.length; j++){
+      var x = list[j];
+      var kk = devKey(x);
+      if(kk && (kk.toLowerCase().indexOf(String(key).toLowerCase()) >= 0
+             || String(key).toLowerCase().indexOf(kk.toLowerCase()) >= 0)) return x.name;
+    }
+    return key;
+  }
+  function shortKey(key){
+    var s = String(key || "");
+    return s.length > 26 ? s.substring(0, 12) + "…" + s.substring(s.length - 10) : s;
+  }
+
+  /* ---------- 渲染 ---------- */
   function render(d){
-    connected = true;
-    $('ver').textContent = 'v' + d.version;
-    $('port').textContent = d.port;
-    $('uptime').textContent = fmtUptime(d.uptime);
+    setConn(true);
 
-    var pill = $('statePill');
-    pill.className = 'pill' + (d.paused ? ' warn' : '');
-    $('stateText').textContent = d.paused ? '已暂停' : '运行中';
+    $("ver").textContent = "v" + d.version;
+    $("uptime").textContent = fmtUptime(d.uptime);
+    $("arch").textContent = d.arch || "--";
 
-    $('pbName').textContent = d.playback.name || '--';
-    $('pbVid').textContent = d.playback.vid || '--';
-    $('micName').textContent = d.mic.name || '--';
-    $('micVid').textContent = d.mic.vid || '--';
+    var pill = $("statePill");
+    pill.className = "pill" + (d.paused ? " warn" : "");
+    $("stateText").textContent = d.paused ? "已暂停" : "运行中";
 
-    $('matchText').textContent = d.matchedText || '--';
-    $('fbBadge').className = 'badge' + (d.isFallback ? ' on' : '');
+    $("pbName").textContent = d.playback.name || "—";
+    $("pbVid").textContent = d.playback.vid || "—";
+    $("micName").textContent = d.mic.name || "—";
+    $("micVid").textContent = d.mic.vid || "—";
 
-    $('switches').textContent = d.switches;
-    $('retries').textContent = d.retries;
-    $('ruleCount').textContent = (d.rules||[]).length;
-    $('fallbackKey').textContent = d.fallback || '未设置';
-    $('fbKey').textContent = d.fallback || '未设置（保持不变）';
-    $('exePath').textContent = d.exePath || '';
-    $('btnToggle').textContent = d.paused ? '恢复联动' : '暂停联动';
+    $("matchText").textContent = d.matchedText || "—";
+    $("fbBadge").className = "badge" + (d.isFallback ? " on" : "");
+
+    $("switches").textContent = d.switches;
+    $("retries").textContent = d.retries;
+    $("fallbackKey").textContent = d.fallback ? nameOf(d.fallback) : "未设置";
+    $("fallbackKey").title = d.fallback || "";
+    $("fbKey").textContent = d.fallback ? (nameOf(d.fallback) + "  (" + shortKey(d.fallback) + ")") : "未设置（保持不变）";
+    $("fbKey").title = d.fallback || "";
+    $("fbClear").className = "fbclear" + (d.fallback ? "" : " hide");
+    $("exePath").textContent = d.exePath || "";
+    $("exePath").title = d.exePath || "";
+    $("btnToggle").textContent = d.paused ? "恢复联动" : "暂停联动";
+
+    applyTheme(d.theme || "auto", !!d.themeDark);
     renderUpdate(d.update);
 
     guard = true;
-    $('autoStart').checked = !!d.autostart;
+    $("autoStart").checked = !!d.autostart;
     guard = false;
 
-    var rb = '';
-    (d.rules||[]).forEach(function(r){
-      rb += '<tr><td class="mono">'+esc(r.playback)+'</td><td class="arrow">&rarr;</td>'
-          + '<td class="mono">'+esc(r.mic)+'</td><td class="note">'+esc(r.note)+'</td></tr>';
-    });
-    if(!rb) rb = '<tr><td colspan="4" class="note">未配置规则</td></tr>';
-    $('ruleBody').innerHTML = rb;
+    state.pb = d.devicesPlayback || [];
+    state.cap = d.devicesCapture || [];
+    state.fallback = d.fallback || "";
 
-    $('pbList').innerHTML = devList(d.devicesPlayback, 'render');
-    $('capList').innerHTML = devList(d.devicesCapture, 'capture');
-
-    // 日志
-    var logs = d.log || [];
-    var key = logs.length + '|' + (logs.length ? logs[logs.length-1].t + logs[logs.length-1].text : '');
-    if(key !== lastLogKey){
-      lastLogKey = key;
-      var box = $('logbox');
-      var html = '';
-      logs.forEach(function(l){
-        html += '<div class="lg '+esc(l.level)+'"><span class="t">'+esc(l.t)+'</span><span class="x">'+esc(l.text)+'</span></div>';
+    // 规则只在服务器那份真的变了、而且不是我们自己刚存的那份时才覆盖本地，
+    // 否则用户正在输入说明的那一格会被重画掉，光标就飞了。
+    // 首帧没有规则时签名为空串，跟初始值撞上，所以另外用一个标志逼它画一次。
+    var sig = rulesSig(d.rules);
+    if(!rulesRendered || (sig !== localSig && sig !== lastServerSig)){
+      rulesRendered = true;
+      lastServerSig = sig;
+      state.rules = (d.rules || []).map(function(r){
+        return {p:r.playback, m:r.mic, n:r.note || ""};
       });
-      box.innerHTML = html;
-      if($('autoScroll').checked) box.scrollTop = box.scrollHeight;
+      renderRules();
+    } else {
+      lastServerSig = sig;
     }
 
-    // 新事件 → 闪烁
+    renderBoard();
+    renderDevices();
+    renderLog(d.log || []);
+
     var ev = d.lastEvent || {};
     if(booted && ev.tick !== lastTick){
-      flash($('nodeMic')); flash($('nodeRender'));
-      var c = $('core'); c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash');
-      setTimeout(function(){ c.classList.remove('flash'); }, 900);
+      flash($("pbCard"));
+      flash($("micCard"));
     }
     lastTick = ev.tick;
     booted = true;
   }
 
-  function renderUpdate(u){
-    lastUpdate = u || {};
-    var btn = $('btnUpdate'), msg = $('updMsg'), ver = $('ver');
-    var s = lastUpdate.status || 'idle';
-
-    if(s === 'checking'){ btn.textContent = '检查中…'; btn.disabled = true; }
-    else if(s === 'downloading'){ btn.textContent = '下载中 ' + (lastUpdate.percent||0) + '%'; btn.disabled = true; }
-    else if(s === 'available'){ btn.textContent = '下载 v' + lastUpdate.latest; btn.disabled = false; }
-    else if(s === 'ready'){ btn.textContent = '重启并更新'; btn.disabled = false; }
-    else { btn.textContent = '检查更新'; btn.disabled = false; }
-
-    msg.className = 'updmsg';
-    if(s === 'available'){
-      msg.textContent = '发现 v' + lastUpdate.latest + '，点右边按钮下载';
-      msg.className = 'updmsg warn';
-      ver.className = 'ver new';
-      ver.title = lastUpdate.notes ? ('更新说明：\n' + lastUpdate.notes) : '有新版本可用';
-    } else if(s === 'ready'){
-      msg.textContent = 'v' + lastUpdate.latest + ' 已就绪，重启后生效';
-      msg.className = 'updmsg warn';
-      ver.className = 'ver new';
-      ver.title = '新版本已下载，重启程序即可换上';
-    } else if(s === 'error'){
-      msg.textContent = lastUpdate.message || '检查更新失败';
-      msg.className = 'updmsg err';
-      ver.className = 'ver';
-      ver.title = '';
-    } else if(s === 'latest'){
-      msg.textContent = '已是最新版本';
-      ver.className = 'ver';
-      ver.title = '';
-    } else {
-      msg.textContent = lastUpdate.message || '';
-      ver.className = 'ver';
-      ver.title = '';
+  function rulesSig(list){
+    list = list || [];
+    var out = [];
+    for(var i = 0; i < list.length; i++){
+      var r = list[i];
+      // 服务器那份字段名是 playback/mic/note，本地那份是 p/m/n
+      out.push((r.playback !== undefined ? r.playback : r.p) + "\t"
+             + (r.mic !== undefined ? r.mic : r.m) + "\t"
+             + (r.note !== undefined ? r.note : (r.n || "")));
     }
+    return out.join("\n");
+  }
+
+  /* ---------- 配对板 ---------- */
+  function pickItem(d, kind){
+    var key = devKey(d);
+    var cls = kind === "pb" ? "pb" : "";
+    var title = kind === "pb" ? "按住拖到右边麦克风上，或点一下再点右边" : "把左边的播放设备拖到这里";
+    return '<li class="' + cls + '" data-key="' + esc(key) + '"'
+         + (kind === "pb" ? ' draggable="true"' : "")
+         + ' title="' + esc(title) + '">'
+         + '<span class="b"></span><span class="nm">' + esc(d.name) + '</span>'
+         + '<span class="vd">' + esc(d.vid || "—") + '</span></li>';
+  }
+
+  function renderBoard(){
+    var pb = state.pb, cap = state.cap;
+    var h1 = "", i;
+    if(!pb.length) h1 = '<li class="na">没有检测到播放设备</li>';
+    for(i = 0; i < pb.length; i++) h1 += pickItem(pb[i], "pb");
+    $("pairPb").innerHTML = h1;
+
+    var h2 = "";
+    if(!cap.length) h2 = '<li class="na">没有检测到录音设备</li>';
+    for(i = 0; i < cap.length; i++) h2 += pickItem(cap[i], "cap");
+    $("pairCap").innerHTML = h2;
+
+    // 选中的那台要保持高亮
+    if(selKey){
+      var items = $("pairPb").getElementsByTagName("li");
+      for(i = 0; i < items.length; i++){
+        if(items[i].getAttribute("data-key") === selKey) items[i].classList.add("sel");
+      }
+    }
+  }
+
+  function renderRules(){
+    var list = state.rules;
+    $("ruleCount").textContent = list.length;
+    $("ruleCount2").textContent = list.length;
+
+    if(!list.length){
+      $("ruleRows").innerHTML = '<div class="empty">'
+        + '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">'
+        + '<path d="M3 6h18M3 12h11M3 18h7"/><path d="M18 15v6M15 18h6"/></svg>'
+        + '<span>还没有规则，把左边的播放设备拖到右边麦克风上试试</span>'
+        + '</div>';
+      return;
+    }
+
+    var html = "";
+    for(var i = 0; i < list.length; i++){
+      var r = list[i];
+      html += '<div class="rrow" data-i="' + i + '">'
+            + '<span class="rfrom" title="' + esc(r.p) + '">' + esc(nameOf(r.p)) + '</span>'
+            + '<span class="rar">→</span>'
+            + '<span class="rto" title="' + esc(r.m) + '">' + esc(nameOf(r.m)) + '</span>'
+            + '<input class="rnote" type="text" maxlength="60" placeholder="说明（可留空）" value="' + esc(r.n) + '">'
+            + '<button type="button" class="rdel" title="删除这条规则">✕</button>'
+            + '</div>';
+    }
+    $("ruleRows").innerHTML = html;
+  }
+
+  function renderDevices(){
+    $("pbList").innerHTML = devList(state.pb, "render");
+    $("capList").innerHTML = devList(state.cap, "capture");
   }
 
   function devList(arr, kind){
     arr = arr || [];
-    if(!arr.length) return '<li><span class="b"></span><span class="nm">无设备</span></li>';
-    return arr.map(function(x){
-      return '<li class="'+(x.default?'on':'')+'" data-id="'+esc(x.id)+'" data-kind="'+kind+'"'
-           + ' title="'+(x.default?'当前默认设备':'点一下设为默认')+'">'
-           + '<span class="b"></span><span class="nm">'+esc(x.name)+'</span><span class="vd">'+esc(x.vid)+'</span></li>';
-    }).join('');
+    if(!arr.length) return '<li class="na"><span class="b"></span><span class="nm">没有检测到设备</span></li>';
+    var html = "";
+    for(var i = 0; i < arr.length; i++){
+      var x = arr[i];
+      html += '<li class="' + (x["default"] ? "on" : "") + '"'
+            + ' data-id="' + esc(x.id) + '" data-kind="' + kind + '"'
+            + ' title="' + (x["default"] ? "当前默认设备" : "点一下设为默认") + '">'
+            + '<span class="b"></span><span class="nm">' + esc(x.name) + '</span>'
+            + '<span class="vd">' + esc(x.vid) + '</span></li>';
+    }
+    return html;
   }
 
-  // 设备列表点击：没拿到 id 的（比如「无设备」那条）直接忽略
-  function onDevClick(e){
-    var li = e.target;
-    while(li && li.tagName !== 'LI') li = li.parentNode;
-    if(!li || !li.getAttribute) return;
-    if(li.className.indexOf('on') >= 0) return;   // 已经是默认了，不用再切
-    var id = li.getAttribute('data-id');
-    if(!id) return;
-    act(li.getAttribute('data-kind') === 'render' ? 'setplayback' : 'setcapture', undefined, id);
+  function renderLog(logs){
+    if(!logOpen) return;
+    var key = logs.length + "|" + (logs.length ? logs[logs.length - 1].t + logs[logs.length - 1].text : "");
+    if(key === lastLogKey) return;
+    lastLogKey = key;
+
+    var box = $("logbox");
+    var html = "";
+    for(var i = 0; i < logs.length; i++){
+      var l = logs[i];
+      html += '<div class="lg ' + esc(l.level) + '"><span class="t">' + esc(l.t) + '</span>'
+            + '<span class="x">' + esc(l.text) + '</span></div>';
+    }
+    if(!html) html = '<div class="lg info"><span class="t">--:--:--</span><span class="x">暂无日志</span></div>';
+    box.innerHTML = html;
+    $("logCount").textContent = "共 " + logs.length + " 条";
+    if($("autoScroll").checked) box.scrollTop = box.scrollHeight;
+  }
+
+  function renderUpdate(u){
+    lastUpdate = u || {};
+    var btn = $("btnUpdate"), msg = $("updMsg"), ver = $("ver");
+    var s = lastUpdate.status || "idle";
+
+    btn.disabled = false;
+    if(s === "checking"){ btn.textContent = "检查中…"; btn.disabled = true; }
+    else if(s === "downloading"){ btn.textContent = "下载中 " + (lastUpdate.percent || 0) + "%"; btn.disabled = true; }
+    else if(s === "available"){ btn.textContent = "下载 v" + lastUpdate.latest; }
+    else if(s === "ready"){ btn.textContent = "重启并更新"; }
+    else { btn.textContent = "检查更新"; }
+
+    msg.className = "updmsg";
+    if(s === "available"){
+      msg.textContent = "发现 v" + lastUpdate.latest + "，点右边按钮下载";
+      msg.className = "updmsg warn";
+      ver.className = "ver new";
+      ver.title = lastUpdate.notes ? ("更新说明：\n" + lastUpdate.notes) : "有新版本可用";
+    } else if(s === "ready"){
+      msg.textContent = "v" + lastUpdate.latest + " 已就绪，重启后生效";
+      msg.className = "updmsg warn";
+      ver.className = "ver new";
+      ver.title = "新版本已下载，重启程序即可换上";
+    } else if(s === "error"){
+      msg.textContent = lastUpdate.message || "检查更新失败";
+      msg.className = "updmsg err";
+      ver.className = "ver";
+      ver.title = "";
+    } else if(s === "latest"){
+      msg.textContent = "已是最新版本";
+      ver.className = "ver";
+      ver.title = "";
+    } else {
+      msg.textContent = lastUpdate.message || "";
+      ver.className = "ver";
+      ver.title = "";
+    }
   }
 
   function setConn(ok){
     if(connected === ok) return;
     connected = ok;
-    var pill = $('statePill');
+    $("banner").className = "banner" + (ok ? "" : " on");
     if(!ok){
-      pill.className = 'pill err';
-      $('stateText').textContent = '连接中断';
+      var pill = $("statePill");
+      pill.className = "pill err";
+      $("stateText").textContent = "连接中断";
     }
   }
 
+  /* ---------- 轮询 ----------
+     窗口收进托盘时页面会变 hidden，这时候停掉轮询，别白烧 CPU。
+     C# 那边把窗口叫出来时会推一条 wake，这里再接着跑。 */
   function tick(){
-    fetch('/api/status', {cache:'no-store'})
-      .then(function(r){ return r.json(); })
-      .then(function(d){ if(d && d.ok) render(d); else setConn(false); })
-      .catch(function(){ setConn(false); });
+    if(document.hidden) return;
+    call("/api/status").then(function(d){
+      if(d && d.ok) render(d);
+      else setConn(false);
+    }, function(){ setConn(false); });
   }
 
-  function act(action, value, id){
-    var payload = {action:action, value:value};
-    if(id) payload.id = id;
-    fetch('/api/action', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
-    }).then(function(r){ return r.json(); }).then(function(d){ if(d && d.ok) render(d); tick(); })
-      .catch(function(){});
+  function startPolling(){
+    if(pollTimer) return;
+    pollTimer = setInterval(tick, 1000);
+  }
+  function stopPolling(){
+    if(!pollTimer) return;
+    clearInterval(pollTimer);
+    pollTimer = null;
   }
 
-  $('btnToggle').onclick = function(){ act('toggle'); };
-  $('btnDir').onclick = function(){ act('opendir'); };
-  $('btnLog').onclick = function(){ act('openlog'); };
-  $('pbList').addEventListener('click', onDevClick);
-  $('capList').addEventListener('click', onDevClick);
-  $('btnUpdate').onclick = function(){
-    var s = lastUpdate.status || 'idle';
-    if(s === 'available') act('downloadupdate');
-    else if(s === 'ready'){
-      if(confirm('现在重启并更新？程序会退出，换上新版本后自动启动。')) act('applyupdate');
+  document.addEventListener("visibilitychange", function(){
+    if(document.hidden) stopPolling();
+    else { startPolling(); tick(); }
+  });
+
+  /* ---------- 动作 ---------- */
+  function act(action, value, deviceId, text){
+    call("/api/action", {a:action, v:value, dv:deviceId, tx:text}).then(function(d){
+      if(d && d.ok) render(d);
+    }, function(){});
+  }
+
+  function saveRules(){
+    var lines = [];
+    for(var i = 0; i < state.rules.length; i++){
+      var r = state.rules[i];
+      // 一行一条，三段用制表符隔开；说明里的分隔符先洗掉，别把行拆坏
+      lines.push(r.p + "\t" + r.m + "\t" + String(r.n || "").replace(/[\t\r\n]/g, " "));
     }
-    else act('checkupdate');
+    localSig = rulesSig(state.rules);
+    act("saverules", undefined, undefined, lines.join("\n"));
+    var hint = $("saveHint");
+    hint.className = "saved on";
+    clearTimeout(hint._h);
+    hint._h = setTimeout(function(){ hint.className = "saved"; }, 1600);
+  }
+
+  // 同一台播放设备只留一条：再拖一次就是换目标，不堆重复条目
+  function addRule(p, m){
+    if(!p || !m) return;
+    for(var i = 0; i < state.rules.length; i++){
+      if(state.rules[i].p === p){
+        if(state.rules[i].m === m){ toast(nameOf(p) + " 已经指向这台麦克风了"); return; }
+        state.rules[i].m = m;
+        renderRules(); saveRules();
+        toast("已改为：" + nameOf(p) + " → " + nameOf(m));
+        return;
+      }
+    }
+    state.rules.push({p:p, m:m, n:""});
+    renderRules(); saveRules();
+    toast("已建立规则：" + nameOf(p) + " → " + nameOf(m));
+  }
+
+  function itemOf(node){
+    while(node && node.tagName !== "LI") node = node.parentNode;
+    return node && node.getAttribute ? node : null;
+  }
+  function clearDrop(){
+    var marked = document.querySelectorAll("ul.picks li.drop");
+    for(var i = 0; i < marked.length; i++) marked[i].classList.remove("drop");
+    $("fbRow").classList.remove("drop");
+  }
+
+  /* ---------- 拖拽 ---------- */
+  var pbUl = $("pairPb"), capUl = $("pairCap"), fbRow = $("fbRow");
+
+  pbUl.addEventListener("dragstart", function(e){
+    var li = itemOf(e.target);
+    if(!li || !li.getAttribute("data-key")) { e.preventDefault(); return; }
+    drag = {key:li.getAttribute("data-key")};
+    li.classList.add("dragging");
+    try {
+      e.dataTransfer.setData("text/plain", drag.key);
+      e.dataTransfer.effectAllowed = "copy";
+    } catch(x){}
+  });
+  pbUl.addEventListener("dragend", function(e){
+    var li = itemOf(e.target);
+    if(li) li.classList.remove("dragging");
+    drag = null;
+    clearDrop();
+  });
+
+  capUl.addEventListener("dragover", function(e){
+    if(!drag) return;
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = "copy"; } catch(x){}
+    var li = itemOf(e.target);
+    clearDrop();
+    if(li && li.getAttribute("data-key")) li.classList.add("drop");
+  });
+  capUl.addEventListener("dragleave", function(e){
+    if(!capUl.contains(e.relatedTarget)) clearDrop();
+  });
+  capUl.addEventListener("drop", function(e){
+    e.preventDefault();
+    var li = itemOf(e.target);
+    var m = li ? li.getAttribute("data-key") : "";
+    clearDrop();
+    if(drag && m){ addRule(drag.key, m); drag = null; }
+  });
+
+  fbRow.addEventListener("dragover", function(e){
+    if(!drag) return;
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = "copy"; } catch(x){}
+    clearDrop();
+    fbRow.classList.add("drop");
+  });
+  fbRow.addEventListener("dragleave", function(){ fbRow.classList.remove("drop"); });
+  fbRow.addEventListener("drop", function(e){
+    e.preventDefault();
+    fbRow.classList.remove("drop");
+    if(!drag) return;
+    var key = drag.key;
+    drag = null;
+    act("setfallback", undefined, undefined, key);
+    toast("兜底麦克风已设为 " + nameOf(key));
+  });
+
+  /* ---------- 点击配对（拖不动的场合也能用） ---------- */
+  pbUl.addEventListener("click", function(e){
+    var li = itemOf(e.target);
+    if(!li || !li.getAttribute("data-key")) return;
+    var key = li.getAttribute("data-key");
+    if(selKey === key){ selKey = null; }
+    else { selKey = key; toast("已选中 " + nameOf(key) + "，再点右边一台麦克风即可"); }
+    renderBoard();
+  });
+
+  capUl.addEventListener("click", function(e){
+    var li = itemOf(e.target);
+    if(!li || !li.getAttribute("data-key")) return;
+    if(!selKey){ toast("先点左边的播放设备，再点这里", true); return; }
+    addRule(selKey, li.getAttribute("data-key"));
+    selKey = null;
+    renderBoard();
+  });
+
+  /* ---------- 规则行操作 ---------- */
+  $("ruleRows").addEventListener("click", function(e){
+    var btn = e.target;
+    while(btn && btn.tagName !== "BUTTON") btn = btn.parentNode;
+    if(!btn) return;
+    var row = btn.parentNode;
+    var i = parseInt(row.getAttribute("data-i"), 10);
+    if(isNaN(i) || !state.rules[i]) return;
+    var gone = state.rules[i];
+    state.rules.splice(i, 1);
+    renderRules(); saveRules();
+    toast("已删除：" + nameOf(gone.p) + " → " + nameOf(gone.m));
+  });
+
+  $("ruleRows").addEventListener("input", function(e){
+    if(e.target.className !== "rnote") return;
+    var row = e.target.parentNode;
+    var i = parseInt(row.getAttribute("data-i"), 10);
+    if(isNaN(i) || !state.rules[i]) return;
+    state.rules[i].n = e.target.value;
+    // 边打字边存会把磁盘敲烂，停手半秒再落盘
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(saveRules, 600);
+  });
+
+  $("fbClear").onclick = function(){
+    act("setfallback", undefined, undefined, "");
+    toast("已清除兜底规则");
   };
-  $('ver').onclick = function(){
-    if(lastUpdate.status === 'available' || lastUpdate.status === 'ready') act('openreleases');
+
+  /* ---------- 日志弹窗 ---------- */
+  function openLog(){
+    logOpen = true;
+    $("logModal").className = "modal on";
+    lastLogKey = "";
+    tick();
+  }
+  function closeLog(){
+    logOpen = false;
+    $("logModal").className = "modal";
+  }
+  $("btnLog").onclick = openLog;
+  $("logX").onclick = closeLog;
+  $("logClose").onclick = closeLog;
+  $("logModal").addEventListener("click", function(e){
+    if(e.target === $("logModal")) closeLog();
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.key === "Escape" && logOpen) closeLog();
+  });
+  $("btnOpenLogFile").onclick = function(){ act("openlog"); };
+
+  /* ---------- 其余按钮 ---------- */
+  $("btnToggle").onclick = function(){ act("toggle"); };
+  $("btnDir").onclick = function(){ act("opendir"); };
+
+  function onDevClick(e){
+    var li = e.target;
+    while(li && li.tagName !== "LI") li = li.parentNode;
+    if(!li || !li.getAttribute) return;
+    if(li.className.indexOf("on") >= 0) return;
+    var id = li.getAttribute("data-id");
+    if(!id) return;
+    act(li.getAttribute("data-kind") === "render" ? "setplayback" : "setcapture", undefined, id);
+  }
+  $("pbList").addEventListener("click", onDevClick);
+  $("capList").addEventListener("click", onDevClick);
+
+  $("btnUpdate").onclick = function(){
+    var s = lastUpdate.status || "idle";
+    if(s === "available") act("downloadupdate");
+    else if(s === "ready"){
+      if(confirm("现在重启并更新？程序会退出，换上新版本后自动启动。")) act("applyupdate");
+    }
+    else act("checkupdate");
   };
-  $('autoStart').onchange = function(){
+  $("ver").onclick = function(){
+    if(lastUpdate.status === "available" || lastUpdate.status === "ready") act("openreleases");
+  };
+  $("autoStart").onchange = function(){
     if(guard) return;
-    act('autostart', this.checked);
+    act("autostart", this.checked);
   };
 
   tick();
-  setInterval(tick, 1000);
+  startPolling();
 })();
 </script>
 </body>

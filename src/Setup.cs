@@ -1,7 +1,10 @@
 // Setup.cs — 安装 / 卸载
 //
-// 单文件安装器：主程序 exe 作为资源嵌进来，装到当前用户目录，不碰系统目录，
+// 单文件安装器：主程序和它的运行库作为资源嵌进来，装到当前用户目录，不碰系统目录，
 // 全程不需要管理员权限。卸载信息写在 HKCU，跟安装位置一个层级。
+//
+// 装之前先做环境预检（系统架构 / .NET Framework / WebView2 运行时），
+// 缺什么当场说清楚，别等装完打不开界面再让用户猜。
 //
 // 用法：
 //   AutoMicSwitch-Setup.exe               图形界面安装
@@ -12,6 +15,7 @@
 //
 // 作者：沐辉 · MIT License
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -27,10 +31,31 @@ namespace AutoMicSwitchSetup
     internal static class Setup
     {
         const string AppName = "AutoMicSwitch";
-        const string PayloadName = "AutoMicSwitch.exe";
-        const string RulesName = "rules.example.txt";
+        const string RulesName = "payload_rules.example.txt";
         const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
         const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + AppName;
+        const string PrefKey = @"Software\AutoMicSwitch";
+
+        // 界面跑在 WebView2 里，运行时装不上就没界面可看，装之前先问一声
+        const string WebView2ClientId = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+        public const string WebView2DownloadUrl = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
+
+        // .NET Framework 4.6.2 对应的 Release 号，WebView2 的托管库要求不低于它
+        const int NetFxMinRelease = 394802;
+
+        // ---------- 载荷清单 ----------
+        // 资源名（嵌在安装包里的名字）→ 装完之后在安装目录里的相对路径。
+        // 三套 WebView2Loader 都得带上：主程序是 AnyCPU，同一个 exe 在不同机器上
+        // 进程位数不一样，SDK 会按当前进程架构去 runtimes\win-<arch>\native 里挑。
+        static readonly string[][] Payload = new string[][]
+        {
+            new string[] { "payload_AutoMicSwitch.exe",                   AppName + ".exe" },
+            new string[] { "payload_Microsoft.Web.WebView2.Core.dll",     "Microsoft.Web.WebView2.Core.dll" },
+            new string[] { "payload_Microsoft.Web.WebView2.WinForms.dll", "Microsoft.Web.WebView2.WinForms.dll" },
+            new string[] { "payload_WebView2Loader.x86.dll",              @"runtimes\win-x86\native\WebView2Loader.dll" },
+            new string[] { "payload_WebView2Loader.x64.dll",              @"runtimes\win-x64\native\WebView2Loader.dll" },
+            new string[] { "payload_WebView2Loader.arm64.dll",            @"runtimes\win-arm64\native\WebView2Loader.dll" },
+        };
 
         internal static string InstallDir
         {
@@ -81,17 +106,141 @@ namespace AutoMicSwitchSetup
             using (InstallForm f = new InstallForm()) { f.ShowDialog(); }
         }
 
+        // ---------- 环境预检 ----------
+        internal class EnvItem
+        {
+            public string Name;
+            public bool Ok;
+            public string Detail;
+            public bool Link;      // Detail 是可点的下载入口
+        }
+
+        internal static List<EnvItem> CheckEnvironment()
+        {
+            List<EnvItem> list = new List<EnvItem>();
+
+            list.Add(new EnvItem { Name = "系统架构", Ok = true, Detail = OsArch() });
+
+            int rel = NetFxRelease();
+            if (rel >= NetFxMinRelease)
+            {
+                list.Add(new EnvItem { Name = ".NET Framework", Ok = true, Detail = NetFxName(rel) });
+            }
+            else
+            {
+                list.Add(new EnvItem
+                {
+                    Name = ".NET Framework",
+                    Ok = false,
+                    Detail = rel <= 0 ? "未检测到 4.x，程序无法运行" : "版本过低（" + NetFxName(rel) + "），需要 4.6.2 或更高"
+                });
+            }
+
+            string wv = WebView2Version();
+            if (wv != null)
+            {
+                list.Add(new EnvItem { Name = "WebView2 运行时", Ok = true, Detail = wv });
+            }
+            else
+            {
+                list.Add(new EnvItem
+                {
+                    Name = "WebView2 运行时",
+                    Ok = false,
+                    Detail = "未安装，点这里去装（界面需要它）",
+                    Link = true
+                });
+            }
+
+            return list;
+        }
+
+        internal static string OsArch()
+        {
+            string os = Environment.GetEnvironmentVariable("PROCESSOR_ARCHITEW6432");
+            if (string.IsNullOrEmpty(os)) os = Environment.GetEnvironmentVariable("PROCESSOR_ARCHITECTURE");
+            os = (os == null ? "" : os).ToUpperInvariant();
+            if (os.IndexOf("ARM64", StringComparison.Ordinal) >= 0) return "ARM64";
+            if (os.IndexOf("AMD64", StringComparison.Ordinal) >= 0) return "x64";
+            if (os.IndexOf("X86", StringComparison.Ordinal) >= 0) return "x86";
+            return "未知";
+        }
+
+        static int NetFxRelease()
+        {
+            try
+            {
+                using (RegistryKey k = Registry.LocalMachine.OpenSubKey(
+                    @"SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full", false))
+                {
+                    if (k == null) return 0;
+                    object v = k.GetValue("Release");
+                    if (v == null) return 0;
+                    return Convert.ToInt32(v);
+                }
+            }
+            catch { return 0; }
+        }
+
+        static string NetFxName(int release)
+        {
+            if (release >= 533320) return "4.8.1 或更高";
+            if (release >= 528040) return "4.8";
+            if (release >= 461808) return "4.7.2";
+            if (release >= 461308) return "4.7.1";
+            if (release >= 460798) return "4.7";
+            if (release >= 394802) return "4.6.2";
+            if (release >= 394254) return "4.6.1";
+            if (release >= 393295) return "4.6";
+            if (release > 0) return "4.x（Release " + release + "）";
+            return "未安装";
+        }
+
+        // 系统级和用户级都可能装一份，都看一遍
+        internal static string WebView2Version()
+        {
+            string[] machinePaths = new string[]
+            {
+                @"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\" + WebView2ClientId,
+                @"SOFTWARE\Microsoft\EdgeUpdate\Clients\" + WebView2ClientId,
+            };
+            foreach (string p in machinePaths)
+            {
+                string v = ReadPv(Registry.LocalMachine, p);
+                if (v != null) return v;
+            }
+            return ReadPv(Registry.CurrentUser, @"Software\Microsoft\EdgeUpdate\Clients\" + WebView2ClientId);
+        }
+
+        static string ReadPv(RegistryKey root, string path)
+        {
+            try
+            {
+                using (RegistryKey k = root.OpenSubKey(path, false))
+                {
+                    if (k == null) return null;
+                    object v = k.GetValue("pv");
+                    string s = v == null ? null : Convert.ToString(v);
+                    return string.IsNullOrEmpty(s) ? null : s;
+                }
+            }
+            catch { return null; }
+        }
+
         // ---------- 安装 ----------
         internal static bool DoInstall(bool autostart, bool desktop, bool launch, Action<string> log)
         {
             try
             {
+                Step(log, "校验安装包");
+                VerifyPayload();
+
                 Step(log, "关闭正在运行的程序");
                 KillRunning();
 
                 Step(log, "写入程序文件");
-                Directory.CreateDirectory(InstallDir);
-                WriteResource(PayloadName, AppExe);
+                ExtractPayload();
+
                 CopySelf(UninstExe);
 
                 // 只在没有的时候放一份，升级不覆盖用户改过的规则
@@ -127,6 +276,34 @@ namespace AutoMicSwitchSetup
             }
         }
 
+        // 缺一个文件就是半个安装包，宁可在动手之前就拦下来，
+        // 也不要把旧版本拆了一半再报错
+        static void VerifyPayload()
+        {
+            Assembly asm = Assembly.GetExecutingAssembly();
+            List<string> missing = new List<string>();
+            foreach (string[] item in Payload)
+            {
+                if (asm.GetManifestResourceStream(item[0]) == null) missing.Add(item[0]);
+            }
+            if (missing.Count > 0)
+            {
+                throw new Exception("安装包不完整，缺少 " + string.Join("、", missing.ToArray()) + "，请重新下载");
+            }
+        }
+
+        static void ExtractPayload()
+        {
+            Directory.CreateDirectory(InstallDir);
+            foreach (string[] item in Payload)
+            {
+                string dest = Path.Combine(InstallDir, item[1]);
+                string dir = Path.GetDirectoryName(dest);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                WriteResource(item[0], dest);
+            }
+        }
+
         // ---------- 卸载 ----------
         internal static bool DoUninstall(Action<string> log)
         {
@@ -148,6 +325,7 @@ namespace AutoMicSwitchSetup
 
                 Step(log, "清除注册表项");
                 try { Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false); } catch { }
+                try { Registry.CurrentUser.DeleteSubKeyTree(PrefKey, false); } catch { }
 
                 Step(log, "删除程序文件");
                 if (IsUnder(Application.ExecutablePath, InstallDir))
@@ -241,7 +419,7 @@ namespace AutoMicSwitchSetup
             long size = 0;
             try
             {
-                foreach (string f in Directory.GetFiles(InstallDir))
+                foreach (string f in Directory.GetFiles(InstallDir, "*", SearchOption.AllDirectories))
                     size += new FileInfo(f).Length;
             }
             catch { }
@@ -392,6 +570,14 @@ namespace AutoMicSwitchSetup
     // ---------- 安装界面 ----------
     internal class InstallForm : Form
     {
+        static readonly Color Ink = Color.FromArgb(22, 28, 38);
+        static readonly Color Sub = Color.FromArgb(108, 120, 136);
+        static readonly Color Faint = Color.FromArgb(150, 160, 174);
+        static readonly Color Line = Color.FromArgb(228, 232, 239);
+        static readonly Color Accent = Color.FromArgb(30, 118, 172);
+        static readonly Color OkInk = Color.FromArgb(18, 133, 92);
+        static readonly Color WarnInk = Color.FromArgb(169, 114, 18);
+
         readonly CheckBox cbAuto = new CheckBox();
         readonly CheckBox cbDesktop = new CheckBox();
         readonly CheckBox cbLaunch = new CheckBox();
@@ -409,80 +595,134 @@ namespace AutoMicSwitchSetup
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(468, 316);
+            ClientSize = new Size(524, 412);
             Font = new Font("Microsoft YaHei UI", 9f);
             BackColor = Color.FromArgb(250, 251, 253);
-            ForeColor = Color.FromArgb(28, 36, 48);
+            ForeColor = Ink;
 
             Label title = new Label();
             title.Text = "AutoMicSwitch";
             title.Font = new Font("Microsoft YaHei UI", 16f, FontStyle.Bold);
-            title.ForeColor = Color.FromArgb(12, 74, 110);
-            title.SetBounds(28, 22, 400, 32);
+            title.ForeColor = Color.FromArgb(14, 74, 108);
+            title.SetBounds(26, 20, 460, 32);
             Controls.Add(title);
 
             Label sub = new Label();
             sub.Text = "默认播放设备变化时，自动把默认麦克风切到对应设备";
-            sub.ForeColor = Color.FromArgb(110, 122, 138);
-            sub.SetBounds(30, 56, 410, 20);
+            sub.ForeColor = Sub;
+            sub.SetBounds(28, 54, 470, 20);
             Controls.Add(sub);
 
             Label path = new Label();
             path.Text = "安装到：" + Setup.InstallDir;
-            path.ForeColor = Color.FromArgb(110, 122, 138);
-            path.SetBounds(30, 84, 410, 20);
+            path.ForeColor = Faint;
+            path.SetBounds(28, 78, 470, 20);
             Controls.Add(path);
 
-            Label ver = new Label();
-            ver.Text = "版本 " + Setup.ReadVersion(Assembly.GetExecutingAssembly().Location);
-            ver.ForeColor = Color.FromArgb(150, 160, 174);
-            ver.SetBounds(30, 104, 410, 18);
-            Controls.Add(ver);
+            Controls.Add(Divider(26, 106));
 
-            Panel line = new Panel();
-            line.BackColor = Color.FromArgb(228, 233, 240);
-            line.SetBounds(28, 130, 412, 1);
-            Controls.Add(line);
+            Label envHead = new Label();
+            envHead.Text = "环境检查";
+            envHead.ForeColor = Faint;
+            envHead.Font = new Font("Microsoft YaHei UI", 8.5f);
+            envHead.SetBounds(28, 114, 200, 18);
+            Controls.Add(envHead);
+
+            int y = 136;
+            foreach (Setup.EnvItem item in Setup.CheckEnvironment())
+            {
+                foreach (Control c in EnvRow(item, y)) Controls.Add(c);
+                y += 23;
+            }
+
+            Controls.Add(Divider(26, 208));
 
             cbAuto.Text = "开机自动启动";
             cbAuto.Checked = true;
-            cbAuto.SetBounds(30, 146, 300, 24);
+            cbAuto.SetBounds(28, 222, 300, 24);
             Controls.Add(cbAuto);
 
             cbDesktop.Text = "创建桌面快捷方式";
             cbDesktop.Checked = true;
-            cbDesktop.SetBounds(30, 172, 300, 24);
+            cbDesktop.SetBounds(28, 248, 300, 24);
             Controls.Add(cbDesktop);
 
             cbLaunch.Text = "安装完成后立即运行";
             cbLaunch.Checked = true;
-            cbLaunch.SetBounds(30, 198, 300, 24);
+            cbLaunch.SetBounds(28, 274, 300, 24);
             Controls.Add(cbLaunch);
 
             status.Text = installed ? "已安装过，本次为覆盖更新（rules.txt 会保留）" : "";
-            status.ForeColor = Color.FromArgb(110, 122, 138);
-            status.SetBounds(30, 228, 412, 20);
+            status.ForeColor = Sub;
+            status.SetBounds(28, 308, 470, 20);
             Controls.Add(status);
 
             btnGo.Text = installed ? "更新" : "开始安装";
-            btnGo.SetBounds(252, 264, 92, 32);
+            btnGo.SetBounds(292, 348, 108, 34);
             btnGo.FlatStyle = FlatStyle.Flat;
-            btnGo.BackColor = Color.FromArgb(56, 189, 248);
+            btnGo.BackColor = Accent;
             btnGo.ForeColor = Color.White;
             btnGo.FlatAppearance.BorderSize = 0;
             btnGo.Click += delegate { Go(); };
             Controls.Add(btnGo);
 
             btnCancel.Text = "取消";
-            btnCancel.SetBounds(352, 264, 88, 32);
+            btnCancel.SetBounds(408, 348, 88, 34);
             btnCancel.FlatStyle = FlatStyle.Flat;
             btnCancel.BackColor = Color.FromArgb(236, 240, 245);
+            btnCancel.ForeColor = Ink;
             btnCancel.FlatAppearance.BorderColor = Color.FromArgb(214, 221, 230);
             btnCancel.Click += delegate { Close(); };
             Controls.Add(btnCancel);
 
             AcceptButton = btnGo;
             CancelButton = btnCancel;
+        }
+
+        static Panel Divider(int x, int y)
+        {
+            Panel p = new Panel();
+            p.BackColor = Line;
+            p.SetBounds(x, y, 472, 1);
+            return p;
+        }
+
+        static Control[] EnvRow(Setup.EnvItem item, int y)
+        {
+            Label mark = new Label();
+            mark.Text = item.Ok ? "√" : "!";
+            mark.ForeColor = item.Ok ? OkInk : WarnInk;
+            mark.Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold);
+            mark.SetBounds(30, y, 18, 20);
+
+            Label name = new Label();
+            name.Text = item.Name;
+            name.ForeColor = Ink;
+            name.SetBounds(52, y, 132, 20);
+
+            if (item.Link)
+            {
+                LinkLabel link = new LinkLabel();
+                link.Text = item.Detail;
+                link.LinkColor = WarnInk;
+                link.ActiveLinkColor = Accent;
+                link.SetBounds(188, y, 310, 20);
+                link.LinkClicked += delegate { OpenWebView2Page(); };
+                return new Control[] { mark, name, link };
+            }
+
+            Label detail = new Label();
+            detail.Text = item.Detail;
+            detail.ForeColor = item.Ok ? Sub : WarnInk;
+            detail.SetBounds(188, y, 310, 20);
+
+            return new Control[] { mark, name, detail };
+        }
+
+        static void OpenWebView2Page()
+        {
+            try { Process.Start(Setup.WebView2DownloadUrl); }
+            catch { }
         }
 
         void Go()
@@ -498,8 +738,12 @@ namespace AutoMicSwitchSetup
 
             if (ok)
             {
+                string extra = Setup.WebView2Version() == null
+                    ? "\n\n注意：这台机器还没有 WebView2 运行时，界面需要它。\n"
+                      + "首次打开程序时会给出安装入口。"
+                    : "";
                 MessageBox.Show("安装完成。\n\n程序目录：" + Setup.InstallDir
-                    + "\n开机自启：" + (cbAuto.Checked ? "已开启" : "已关闭"),
+                    + "\n开机自启：" + (cbAuto.Checked ? "已开启" : "已关闭") + extra,
                     "AutoMicSwitch", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 Close();
             }
@@ -529,43 +773,44 @@ namespace AutoMicSwitchSetup
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(420, 186);
+            ClientSize = new Size(430, 196);
             Font = new Font("Microsoft YaHei UI", 9f);
             BackColor = Color.FromArgb(250, 251, 253);
-            ForeColor = Color.FromArgb(28, 36, 48);
+            ForeColor = Color.FromArgb(22, 28, 38);
 
             Label title = new Label();
             title.Text = "卸载 AutoMicSwitch";
             title.Font = new Font("Microsoft YaHei UI", 13f, FontStyle.Bold);
-            title.ForeColor = Color.FromArgb(12, 74, 110);
-            title.SetBounds(24, 20, 372, 28);
+            title.ForeColor = Color.FromArgb(14, 74, 108);
+            title.SetBounds(24, 20, 382, 28);
             Controls.Add(title);
 
             Label info = new Label();
-            info.Text = "将移除程序文件、快捷方式、开机自启和卸载登记。\n"
-                      + "安装目录里的 rules.txt 和日志会一并删除，需要保留请先备份。";
-            info.ForeColor = Color.FromArgb(110, 122, 138);
-            info.SetBounds(26, 54, 372, 42);
+            info.Text = "将移除程序文件、运行库、快捷方式、开机自启和卸载登记。\n"
+                      + "安装目录里的 rules.txt、日志和界面缓存会一并删除，需要保留请先备份。";
+            info.ForeColor = Color.FromArgb(108, 120, 136);
+            info.SetBounds(26, 54, 382, 46);
             Controls.Add(info);
 
             status.Text = "";
-            status.ForeColor = Color.FromArgb(110, 122, 138);
-            status.SetBounds(26, 100, 372, 20);
+            status.ForeColor = Color.FromArgb(108, 120, 136);
+            status.SetBounds(26, 106, 382, 20);
             Controls.Add(status);
 
             btnGo.Text = "卸载";
-            btnGo.SetBounds(206, 136, 88, 32);
+            btnGo.SetBounds(216, 144, 88, 34);
             btnGo.FlatStyle = FlatStyle.Flat;
-            btnGo.BackColor = Color.FromArgb(248, 113, 113);
+            btnGo.BackColor = Color.FromArgb(192, 71, 63);
             btnGo.ForeColor = Color.White;
             btnGo.FlatAppearance.BorderSize = 0;
             btnGo.Click += delegate { Go(); };
             Controls.Add(btnGo);
 
             btnCancel.Text = "取消";
-            btnCancel.SetBounds(304, 136, 88, 32);
+            btnCancel.SetBounds(314, 144, 88, 34);
             btnCancel.FlatStyle = FlatStyle.Flat;
             btnCancel.BackColor = Color.FromArgb(236, 240, 245);
+            btnCancel.ForeColor = Color.FromArgb(22, 28, 38);
             btnCancel.FlatAppearance.BorderColor = Color.FromArgb(214, 221, 230);
             btnCancel.Click += delegate { Close(); };
             Controls.Add(btnCancel);

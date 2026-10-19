@@ -121,51 +121,146 @@ namespace AutoMicSwitch
         // ---------- 配置 ----------
         void LoadRules()
         {
-            rules.Clear();
-            fallbackMicKey = null;
-            RulesConfigured = false;
-
             string dir = AppDomain.CurrentDomain.BaseDirectory;
             ConfigPath = Path.Combine(dir, "rules.txt");
             LogPath = Path.Combine(dir, "AutoMicSwitch.log");
 
-            if (!File.Exists(ConfigPath)) return;
+            List<Rule> parsed = new List<Rule>();
+            string fb = null;
+            bool ok = true;
 
+            if (File.Exists(ConfigPath))
+            {
+                try
+                {
+                    string[] lines = File.ReadAllLines(ConfigPath, Encoding.UTF8);
+                    foreach (string raw in lines)
+                    {
+                        string line = raw.Trim();
+                        if (line.Length == 0 || line[0] == '#' || line.StartsWith("//")) continue;
+
+                        // fallback = VID_XXXX  /  fallback = none
+                        int eq = line.IndexOf('=');
+                        if (eq > 0)
+                        {
+                            string k = line.Substring(0, eq).Trim().ToLowerInvariant();
+                            string v = line.Substring(eq + 1).Trim();
+                            if (k == "fallback") fb = (v.Length == 0 || v == "none") ? null : v;
+                            continue;
+                        }
+
+                        // 播放设备关键字|目标麦克风关键字|说明
+                        string[] parts = line.Split('|');
+                        if (parts.Length < 2) continue;
+                        string pk = parts[0].Trim();
+                        string mk = parts[1].Trim();
+                        if (pk.Length == 0 || mk.Length == 0) continue;
+                        string note = parts.Length >= 3 ? parts[2].Trim() : "";
+                        parsed.Add(new Rule(pk, mk, note));
+                    }
+                }
+                catch (Exception e)
+                {
+                    ok = false;
+                    parsed.Clear();
+                    fb = null;
+                    Log("warn", "rules.txt 解析失败：" + e.Message);
+                }
+            }
+
+            // 轮询线程随时可能在读这份清单，整批换进去，别让它读到写了一半的状态
+            lock (stateLock)
+            {
+                rules.Clear();
+                rules.AddRange(parsed);
+                fallbackMicKey = fb;
+                RulesConfigured = ok && (parsed.Count > 0 || !string.IsNullOrEmpty(fb));
+            }
+        }
+
+        // ---------- 写回规则 ----------
+        // 界面上的拖拽配对最终落回 rules.txt。这原本是用户手写过的文件，
+        // 覆盖前先留一份 .bak，再走临时文件替换，中途出错也不会只剩半个文件。
+        public bool SaveRules(List<Rule> list, out string error)
+        {
+            error = null;
             try
             {
-                string[] lines = File.ReadAllLines(ConfigPath, Encoding.UTF8);
-                foreach (string raw in lines)
+                string fb;
+                lock (stateLock) { fb = fallbackMicKey; }
+
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("# AutoMicSwitch 联动规则");
+                sb.AppendLine("# 由程序界面生成。格式：播放设备关键字|目标麦克风关键字|说明");
+                sb.AppendLine("# 关键字按包含匹配设备 InstanceId，VID_XXXX 或整段设备 ID 都行。");
+                sb.AppendLine("# 以 # 或 // 开头的行是注释。");
+                sb.AppendLine();
+                if (!string.IsNullOrEmpty(fb)) sb.AppendLine("fallback = " + fb);
+                else sb.AppendLine("# fallback = VID_XXXX    取消注释可启用兜底规则");
+                sb.AppendLine();
+                foreach (Rule r in list)
                 {
-                    string line = raw.Trim();
-                    if (line.Length == 0 || line[0] == '#' || line.StartsWith("//")) continue;
-
-                    // fallback = VID_XXXX  /  fallback = none
-                    int eq = line.IndexOf('=');
-                    if (eq > 0)
-                    {
-                        string k = line.Substring(0, eq).Trim().ToLowerInvariant();
-                        string v = line.Substring(eq + 1).Trim();
-                        if (k == "fallback") fallbackMicKey = (v.Length == 0 || v == "none") ? null : v;
-                        continue;
-                    }
-
-                    // 播放设备关键字|目标麦克风关键字|说明
-                    string[] parts = line.Split('|');
-                    if (parts.Length < 2) continue;
-                    string pk = parts[0].Trim();
-                    string mk = parts[1].Trim();
-                    if (pk.Length == 0 || mk.Length == 0) continue;
-                    string note = parts.Length >= 3 ? parts[2].Trim() : "";
-                    rules.Add(new Rule(pk, mk, note));
+                    sb.AppendLine(OneLine(r.PlaybackKey) + "|" + OneLine(r.MicKey) + "|" + OneLine(r.Note));
                 }
-                RulesConfigured = rules.Count > 0 || fallbackMicKey != null;
+
+                string dir = Path.GetDirectoryName(ConfigPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+                string tmp = ConfigPath + ".tmp";
+                File.WriteAllText(tmp, sb.ToString(), new UTF8Encoding(false));
+
+                if (File.Exists(ConfigPath))
+                {
+                    try { File.Copy(ConfigPath, ConfigPath + ".bak", true); } catch { }
+                    try { File.Replace(tmp, ConfigPath, null); }
+                    catch
+                    {
+                        // 目标被别的程序占着时 Replace 会失败，退一步直接覆盖
+                        File.Copy(tmp, ConfigPath, true);
+                        try { File.Delete(tmp); } catch { }
+                    }
+                }
+                else File.Move(tmp, ConfigPath);
+
+                ReloadRules();
+                return true;
             }
             catch (Exception e)
             {
-                rules.Clear();
-                fallbackMicKey = null;
-                Log("warn", "rules.txt 解析失败：" + e.Message);
+                error = e.Message;
+                return false;
             }
+        }
+
+        public void ReloadRules()
+        {
+            LoadRules();
+            Log("ok", "联动规则已更新：" + GetRules().Count + " 条"
+                + (string.IsNullOrEmpty(GetFallback()) ? "，未设兜底" : "，兜底 " + GetFallback()));
+        }
+
+        // 改兜底：先落到内存，再让 SaveRules 把整份写回去
+        public bool SetFallback(string key, out string error)
+        {
+            error = null;
+            try
+            {
+                List<Rule> cur = GetRules();
+                lock (stateLock) { fallbackMicKey = string.IsNullOrEmpty(key) ? null : key; }
+                return SaveRules(cur, out error);
+            }
+            catch (Exception e)
+            {
+                error = e.Message;
+                return false;
+            }
+        }
+
+        // 规则一行一条，值里不能出现分隔符
+        static string OneLine(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            return s.Replace("|", " ").Replace("\t", " ").Replace("\r", " ").Replace("\n", " ").Trim();
         }
 
         public List<Rule> GetRules()
