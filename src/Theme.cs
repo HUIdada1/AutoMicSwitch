@@ -24,8 +24,8 @@ namespace AutoMicSwitch
 
         // 窗口内容区底色，跟页面 body 对齐。
         // WebView2 把页面画出来之前会先铺这层底色，两边一致才不会闪白。
-        public static readonly Color DarkBack = Color.FromArgb(11, 14, 20);
-        public static readonly Color LightBack = Color.FromArgb(246, 247, 249);
+        public static readonly Color DarkBack = Color.FromArgb(8, 11, 16);
+        public static readonly Color LightBack = Color.FromArgb(243, 245, 250);
 
         // ---------- 偏好 ----------
         public static string Preference

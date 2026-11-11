@@ -32,6 +32,7 @@ namespace AutoMicSwitch
         bool booting;
         bool booted;
         bool trayHintShown;
+        bool suspended;
 
         // 退出流程会把它置真。平时点 X 只是收进托盘，音频联动还得接着跑。
         public bool AllowClose;
@@ -40,8 +41,8 @@ namespace AutoMicSwitch
         {
             Text = "AutoMicSwitch";
             Icon = AppIcon.Create(32);
-            ClientSize = new Size(1180, 800);
-            MinimumSize = new Size(980, 640);
+            ClientSize = new Size(1000, 690);
+            MinimumSize = new Size(880, 600);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 9f);
             DoubleBuffered = true;
@@ -119,10 +120,10 @@ namespace AutoMicSwitch
             fallback.BackColor = back;
             fbTitle.ForeColor = txt;
             fbBody.ForeColor = sub;
-            fbGet.BackColor = dark ? Color.FromArgb(62, 140, 190) : Color.FromArgb(30, 118, 172);
-            fbRetry.BackColor = dark ? Color.FromArgb(32, 39, 51) : Color.FromArgb(232, 236, 242);
+            fbGet.BackColor = dark ? Color.FromArgb(62, 125, 255) : Color.FromArgb(47, 107, 255);
+            fbRetry.BackColor = dark ? Color.FromArgb(30, 38, 51) : Color.FromArgb(234, 238, 246);
             fbRetry.ForeColor = txt;
-            fbRetry.FlatAppearance.BorderColor = dark ? Color.FromArgb(48, 58, 74) : Color.FromArgb(212, 219, 229);
+            fbRetry.FlatAppearance.BorderColor = dark ? Color.FromArgb(46, 56, 72) : Color.FromArgb(214, 220, 231);
         }
 
         void Retry()
@@ -321,11 +322,31 @@ namespace AutoMicSwitch
         // ---------- 显隐 ----------
         public void ShowWindow()
         {
+            SetSuspended(false);
             if (!Visible) Show();
             if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
             Activate();
             BringToFront();
             Post("{\"e\":\"wake\"}");   // 页面隐藏时会停掉轮询，叫它接着跑
+        }
+
+        // 窗口收进托盘后把 WebView2 挂起：渲染进程不再画帧，也不留后台定时器。
+        // 重新打开时 Resume，接着用原来那份页面，不用重建环境。
+        async void SetSuspended(bool on)
+        {
+            if (!booted || view.CoreWebView2 == null || suspended == on) return;
+            try
+            {
+                if (on) suspended = await view.CoreWebView2.TrySuspendAsync();
+                else { view.CoreWebView2.Resume(); suspended = false; }
+            }
+            catch { }
+        }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            SetSuspended(!Visible);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)

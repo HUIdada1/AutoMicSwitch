@@ -1,7 +1,9 @@
-// AppIcon.cs — 应用图标画法
+// AppIcon.cs — 应用图标
 //
-// 托盘图标、窗口图标、编译期生成的 .ico 都用这一份画法，改一处三处一起变。
-// 按 32x32 的坐标系画，size 决定缩放倍数。
+// 托盘图标、窗口图标、构建期生成的 .ico 都用这份画法，改一处三处一起变。
+// 坐标系固定 32×32，size 决定缩放倍数。
+//
+// 图形：蓝到青的圆角方块 + 白色话筒，小尺寸下也能认出来。
 //
 // 作者：沐辉 · MIT License
 using System;
@@ -16,36 +18,33 @@ namespace AutoMicSwitch
         [DllImport("user32.dll", SetLastError = true)]
         static extern bool DestroyIcon(IntPtr handle);
 
-        // 单一色相的圆角方块 + 白色话筒。
-        // 同色系深浅渐变在小尺寸下比双色渐变干净，16px 也认得出来。
         public static Bitmap Render(int size)
         {
             Bitmap bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(bmp))
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 g.Clear(Color.Transparent);
                 g.ScaleTransform(size / 32f, size / 32f);
 
-                using (GraphicsPath path = RoundedRect(new RectangleF(1, 1, 30, 30), 8))
-                using (LinearGradientBrush b = new LinearGradientBrush(
-                    new RectangleF(0, 0, 32, 32),
-                    Color.FromArgb(94, 176, 224), Color.FromArgb(38, 112, 160), 60f))
-                    g.FillPath(b, path);
+                RectangleF tile = new RectangleF(1f, 1f, 30f, 30f);
+                using (GraphicsPath path = RoundedRect(tile, 8.4f))
+                using (LinearGradientBrush fill = new LinearGradientBrush(
+                    tile, Color.FromArgb(59, 130, 246), Color.FromArgb(6, 182, 212), 55f))
+                    g.FillPath(fill, path);
 
-                using (SolidBrush w = new SolidBrush(Color.FromArgb(248, 251, 255)))
+                using (SolidBrush white = new SolidBrush(Color.White))
+                using (GraphicsPath cap = RoundedRect(new RectangleF(12.3f, 5.9f, 7.4f, 12.6f), 3.7f))
+                    g.FillPath(white, cap);
+
+                using (Pen pen = new Pen(Color.White, 2.05f))
                 {
-                    using (GraphicsPath cap = RoundedRect(new RectangleF(12, 6, 8, 14), 4))
-                        g.FillPath(w, cap);
-                    g.FillRectangle(w, 14, 20, 4, 4);
-                    using (Pen p = new Pen(Color.FromArgb(248, 251, 255), 2.2f))
-                    {
-                        p.StartCap = LineCap.Round;
-                        p.EndCap = LineCap.Round;
-                        g.DrawArc(p, 9, 12, 14, 12, 0, 180);
-                        g.DrawLine(p, 16, 24, 16, 27);
-                        g.DrawLine(p, 12, 27, 20, 27);
-                    }
+                    pen.StartCap = LineCap.Round;
+                    pen.EndCap = LineCap.Round;
+                    g.DrawArc(pen, 10.1f, 11.5f, 11.8f, 11.8f, 0f, 180f);
+                    g.DrawLine(pen, 16f, 23.3f, 16f, 26f);
+                    g.DrawLine(pen, 12.7f, 26f, 19.3f, 26f);
                 }
             }
             return bmp;

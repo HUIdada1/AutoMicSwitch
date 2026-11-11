@@ -110,6 +110,7 @@ namespace AutoMicSwitch
         IMMDeviceEnumerator enumerator;
         SetDefaultEndpointFn setDefaultEndpoint;
         string lastPlaybackId;
+        int idleTicks;
 
         delegate int SetDefaultEndpointFn(string deviceId, ERole role);
 
@@ -357,7 +358,7 @@ namespace AutoMicSwitch
                         int b = setDefaultEndpoint(target.Id, ERole.eMultimedia);
                         int c = setDefaultEndpoint(target.Id, ERole.eCommunications);
                         Log("ok", "手动切换默认" + (flow == Flow.Render ? "播放" : "录音") + " → "
-                            + target.Name + "  [" + target.Vid + "]  (hr=" + a + "," + b + "," + c + ")");
+                            + target.Name + VidTag(target.InstanceId) + "  (hr=" + a + "," + b + "," + c + ")");
                     }
 
                     lock (stateLock)
@@ -414,7 +415,16 @@ namespace AutoMicSwitch
             if (hr != 0) return;
             string id; dev.GetId(out id);
 
-            if (id == lastPlaybackId) { RefreshCurrent(); return; }
+            // 设备没变时不必每轮都去读属性，隔几轮对一次就够。
+            // 关掉界面的情况下这一层能省掉大部分 COM 调用。
+            if (id == lastPlaybackId)
+            {
+                if (++idleTicks < 8) return;
+                idleTicks = 0;
+                RefreshCurrent();
+                return;
+            }
+            idleTicks = 0;
             lastPlaybackId = id;
 
             string pname = GetProp(dev, FMT_FRIENDLY, 14);
@@ -428,7 +438,7 @@ namespace AutoMicSwitch
                 State.PlaybackVid = ExtractVid(pinst);
             }
 
-            Log("info", "默认播放 → " + pname + "  [" + ExtractVid(pinst) + "]");
+            Log("info", "默认播放 → " + pname + VidTag(pinst));
             Apply(pinst);
             RefreshCurrent();
         }
@@ -512,7 +522,7 @@ namespace AutoMicSwitch
                 int hr1 = setDefaultEndpoint(id, ERole.eConsole);
                 int hr2 = setDefaultEndpoint(id, ERole.eMultimedia);
                 int hr3 = setDefaultEndpoint(id, ERole.eCommunications);
-                Log("ok", "   默认麦克风 → " + name + "  [" + ExtractVid(inst) + "]  (hr=" + hr1 + "," + hr2 + "," + hr3 + ")");
+                Log("ok", "   默认麦克风 → " + name + VidTag(inst) + "  (hr=" + hr1 + "," + hr2 + "," + hr3 + ")");
             }
             lock (stateLock) { State.MicName = name; State.MicInstanceId = inst; State.MicVid = ExtractVid(inst); }
 
@@ -645,6 +655,13 @@ namespace AutoMicSwitch
             int end = i + 4;
             while (end < instanceId.Length && end < i + 8 && IsHex(instanceId[end])) end++;
             return instanceId.Substring(i, end - i).ToUpperInvariant();
+        }
+
+        // 日志里带上 VID，没有 VID 的端点就不写空括号
+        static string VidTag(string instanceId)
+        {
+            string v = ExtractVid(instanceId);
+            return v == "-" ? "" : "  [" + v + "]";
         }
 
         static bool IsHex(char c)

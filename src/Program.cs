@@ -422,11 +422,22 @@ namespace AutoMicSwitch
     {
         public static AudioEngine Engine;
 
+        // 界面每秒问一次状态。设备枚举和注册表读取都不便宜，短时间内的重复请求走缓存：
+        // 窗口开着时 CPU 占用能压下去一截，界面上看不出差别。
+        const int DeviceCacheMs = 2000;
+        static List<DeviceInfo> cachedRenders, cachedCaptures;
+        static DeviceInfo cachedDefRender, cachedDefCapture;
+        static DateTime cachedDevAt = DateTime.MinValue;
+
+        static bool cachedAuto;
+        static DateTime cachedAutoAt = DateTime.MinValue;
+
         public static string Route(string method, string path, string body)
         {
             try
             {
                 if (path == "/api/status") return Status();
+                if (path == "/api/log") return LogSnapshot();
                 if (path == "/api/action") return Action(body);
                 return "{\"ok\":false,\"error\":\"not found\"}";
             }
@@ -434,6 +445,34 @@ namespace AutoMicSwitch
             {
                 return "{\"ok\":false,\"error\":" + Json.Str(e.Message) + "}";
             }
+        }
+
+        static void DeviceSnapshot(AudioEngine e,
+            out List<DeviceInfo> renders, out List<DeviceInfo> captures,
+            out DeviceInfo defRender, out DeviceInfo defCapture)
+        {
+            if (cachedRenders == null || (DateTime.UtcNow - cachedDevAt).TotalMilliseconds > DeviceCacheMs)
+            {
+                cachedRenders = e.Enumerate(Flow.Render);
+                cachedCaptures = e.Enumerate(Flow.Capture);
+                cachedDefRender = e.GetDefault(Flow.Render, Role.Multimedia);
+                cachedDefCapture = e.GetDefault(Flow.Capture, Role.Console);
+                cachedDevAt = DateTime.UtcNow;
+            }
+            renders = cachedRenders;
+            captures = cachedCaptures;
+            defRender = cachedDefRender;
+            defCapture = cachedDefCapture;
+        }
+
+        static bool AutostartCached()
+        {
+            if ((DateTime.UtcNow - cachedAutoAt).TotalSeconds > 3)
+            {
+                cachedAuto = Program.IsAutostartEnabled();
+                cachedAutoAt = DateTime.UtcNow;
+            }
+            return cachedAuto;
         }
 
         static string Status()
@@ -455,10 +494,9 @@ namespace AutoMicSwitch
                 tick = s.LastEventTick; lastText = s.LastEventText; lastLevel = s.LastEventLevel;
             }
 
-            List<DeviceInfo> renders = e.Enumerate(Flow.Render);
-            List<DeviceInfo> captures = e.Enumerate(Flow.Capture);
-            DeviceInfo defRender = e.GetDefault(Flow.Render, Role.Multimedia);
-            DeviceInfo defCapture = e.GetDefault(Flow.Capture, Role.Console);
+            List<DeviceInfo> renders, captures;
+            DeviceInfo defRender, defCapture;
+            DeviceSnapshot(e, out renders, out captures, out defRender, out defCapture);
 
             StringBuilder sb = new StringBuilder(4096);
             sb.Append("{");
@@ -467,7 +505,7 @@ namespace AutoMicSwitch
             sb.Append("\"arch\":").Append(Json.Str(Program.ArchText)).Append(",");
             sb.Append("\"paused\":").Append(Json.Bool(paused)).Append(",");
             sb.Append("\"uptime\":").Append(Json.Num((long)(DateTime.Now - start).TotalSeconds)).Append(",");
-            sb.Append("\"autostart\":").Append(Json.Bool(Program.IsAutostartEnabled())).Append(",");
+            sb.Append("\"autostart\":").Append(Json.Bool(AutostartCached())).Append(",");
             sb.Append("\"exePath\":").Append(Json.Str(Application.ExecutablePath)).Append(",");
             sb.Append("\"logPath\":").Append(Json.Str(e.LogPath)).Append(",");
             sb.Append("\"configPath\":").Append(Json.Str(e.ConfigPath)).Append(",");
@@ -512,6 +550,18 @@ namespace AutoMicSwitch
             sb.Append("\"tick\":").Append(Json.Num(tick));
             sb.Append("},");
 
+            // 界面上那一条「最近」只放 3 条，整份日志留给弹窗按需拉取
+            List<LogEntry> recent = e.SnapshotLog(3);
+            sb.Append("\"recent\":[");
+            for (int i = 0; i < recent.Count; i++)
+            {
+                if (i > 0) sb.Append(",");
+                sb.Append("{\"t\":").Append(Json.Str(recent[i].Time.ToString("HH:mm:ss")))
+                  .Append(",\"level\":").Append(Json.Str(recent[i].Level))
+                  .Append(",\"text\":").Append(Json.Str(recent[i].Text)).Append("}");
+            }
+            sb.Append("],");
+
             sb.Append("\"rules\":[");
             List<Rule> rules = e.GetRules();
             for (int i = 0; i < rules.Count; i++)
@@ -526,10 +576,20 @@ namespace AutoMicSwitch
             AppendDevices(sb, "devicesPlayback", renders, defRender);
             sb.Append(",");
             AppendDevices(sb, "devicesCapture", captures, defCapture);
-            sb.Append(",");
 
-            sb.Append("\"log\":[");
+            sb.Append("}");
+            return sb.ToString();
+        }
+
+        // 日志只在弹窗打开时按需拉取，平时不往状态里塞这 80 条。
+        public static string LogSnapshot()
+        {
+            AudioEngine e = Engine;
+            if (e == null) return "{\"ok\":false,\"log\":[]}";
+
             List<LogEntry> logs = e.SnapshotLog(80);
+            StringBuilder sb = new StringBuilder(4096);
+            sb.Append("{\"ok\":true,\"log\":[");
             for (int i = 0; i < logs.Count; i++)
             {
                 if (i > 0) sb.Append(",");
@@ -537,9 +597,7 @@ namespace AutoMicSwitch
                   .Append(",\"level\":").Append(Json.Str(logs[i].Level))
                   .Append(",\"text\":").Append(Json.Str(logs[i].Text)).Append("}");
             }
-            sb.Append("]");
-
-            sb.Append("}");
+            sb.Append("]}");
             return sb.ToString();
         }
 
@@ -570,11 +628,20 @@ namespace AutoMicSwitch
             {
                 if (Engine.IsPaused) Engine.Resume(); else Engine.Pause();
             }
-            else if (action == "setplayback") Engine.SetDefaultDevice(Flow.Render, Json.Pick(body, "id"));
-            else if (action == "setcapture") Engine.SetDefaultDevice(Flow.Capture, Json.Pick(body, "id"));
+            else if (action == "setplayback")
+            {
+                cachedDevAt = DateTime.MinValue;
+                Engine.SetDefaultDevice(Flow.Render, Json.Pick(body, "id"));
+            }
+            else if (action == "setcapture")
+            {
+                cachedDevAt = DateTime.MinValue;
+                Engine.SetDefaultDevice(Flow.Capture, Json.Pick(body, "id"));
+            }
             else if (action == "autostart")
             {
                 bool ok = Program.SetAutostart(value);
+                cachedAutoAt = DateTime.MinValue;
                 Engine.Log(ok ? "ok" : "err", "开机自启已" + (value ? "开启" : "关闭"));
             }
             else if (action == "settheme")
